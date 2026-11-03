@@ -50,4 +50,64 @@ describe('ItemEntry.taxAmount', () => {
     expect(exclusive.taxAmount).toBe(0);
     expect(inclusive.taxAmount).toBe(0);
   });
+
+  it('rounds an exclusive line tax to the cent', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: 37.5,
+      taxRate: 14.975,
+    });
+
+    expect(entry.taxAmount).toBe(5.62);
+    expect(entry.subtotal).toBe(43.12);
+  });
+
+  it('rounds a negative exclusive line tax away from zero', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: -4.5,
+      taxRate: 14.975,
+    });
+
+    expect(entry.taxAmount).toBe(-0.67);
+  });
+
+  it('extracts an inclusive tax from a round amount', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: 1100,
+      taxRate: 10,
+      isInclusiveTax: true,
+    });
+
+    expect(entry.taxAmount).toBe(100);
+    expect(entry.subtotalExcludingTax).toBe(1000);
+  });
+
+  it('rounds an inclusive line tax to the cent', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: 37.5,
+      taxRate: 14.975,
+      isInclusiveTax: true,
+    });
+
+    expect(entry.taxAmount).toBe(4.88);
+    expect(entry.subtotalExcludingTax).toBe(32.62);
+  });
+
+  it('keeps a negative inclusive line balanced', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: -114.975,
+      taxRate: 14.975,
+      isInclusiveTax: true,
+    });
+
+    expect(entry.taxAmount).toBe(-14.98);
+    expect(entry.subtotalExcludingTax + entry.taxAmount).toBeCloseTo(
+      entry.amount,
+      3,
+    );
+  });
 });

@@ -1,10 +1,7 @@
 import { DiscountType } from '@/common/types/Discount';
 import { BaseModel } from '@/models/Model';
 import { Item } from '@/modules/Items/models/Item';
-import {
-  getExlusiveTaxAmount,
-  getInclusiveTaxAmount,
-} from '@/modules/TaxRates/utils';
+import { computeLineTaxAmount } from '@bigcapital/utils';
 import { Model } from 'objection';
 
 export class ItemEntry extends BaseModel {
@@ -156,11 +153,11 @@ export class ItemEntry extends BaseModel {
    */
   get taxAmount() {
     // Entries built from a DTO without a tax rate have no `taxRate` at all.
-    const taxRate = this.taxRate || 0;
-
-    return this.isInclusiveTax
-      ? getInclusiveTaxAmount(this.amount, taxRate)
-      : getExlusiveTaxAmount(this.amount, taxRate);
+    return computeLineTaxAmount(
+      this.amount,
+      this.taxRate || 0,
+      !!this.isInclusiveTax,
+    );
   }
 
   /**
