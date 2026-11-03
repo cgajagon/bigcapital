@@ -1,3 +1,4 @@
+import { roundHalfAwayFromZero } from '@bigcapital/utils';
 import { Inject, Injectable } from '@nestjs/common';
 import { keyBy, sumBy } from 'lodash';
 import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
@@ -29,7 +30,9 @@ export class ItemEntriesTaxTransactions {
     );
     // Always assign the sum, even when zero, so editing a document whose taxes
     // were all removed overwrites the previously stored amount.
-    model.taxAmountWithheld = sumBy(entries, 'taxAmount');
+    model.taxAmountWithheld = roundHalfAwayFromZero(
+      sumBy(entries, 'taxAmount'),
+    );
 
     return model;
   };

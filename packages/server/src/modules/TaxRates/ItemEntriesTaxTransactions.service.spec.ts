@@ -16,6 +16,6 @@ describe('ItemEntriesTaxTransactions', () => {
       ],
     });
 
-    expect(model.taxAmountWithheld).toBeCloseTo(4.95, 2);
+    expect(model.taxAmountWithheld).toBe(4.95);
   });
 });
