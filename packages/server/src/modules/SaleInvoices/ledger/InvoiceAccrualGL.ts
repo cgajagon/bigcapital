@@ -1,11 +1,64 @@
 import * as R from 'ramda';
+import { roundHalfAwayFromZero } from '@bigcapital/utils';
 import { ILedger } from '@/modules/Ledger/types/Ledger.types';
 import { AccountNormal } from '@/modules/Accounts/Accounts.types';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
 import { Ledger } from '@/modules/Ledger/Ledger';
+import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
+import { buildTaxLedgerEntries } from '@/modules/TaxRates/TaxLedgerEntries';
 import { SaleInvoice } from '../models/SaleInvoice';
 import { AccountingBasis } from '@/common/types/AccountingBasis';
+
+// `accounts_transactions` stores debit and credit as decimal(13,3).
+const LEDGER_DECIMALS = 3;
+const LEDGER_UNITS = 10 ** LEDGER_DECIMALS;
+
+const toLedgerPrecision = (amount: number | null | undefined): number =>
+  roundHalfAwayFromZero(amount || 0, LEDGER_DECIMALS);
+
+const toLedgerUnits = (amount: number): number =>
+  Math.round(amount * LEDGER_UNITS);
+
+const getNetDebit = (entries: ILedgerEntry[]): number =>
+  entries.reduce(
+    (sum, entry) => sum + (entry.debit || 0) - (entry.credit || 0),
+    0,
+  );
+
+/**
+ * Rounds the entries to the ledger precision. The remainder that rounding
+ * leaves between debits and credits goes on the carrier (a credit entry), so
+ * a journal that balances before rounding balances exactly once stored.
+ * A difference the entries already had before rounding (line discounts, which
+ * the invoice total leaves out) is not a rounding remainder and is left as is.
+ * @param {ILedgerEntry[]} entries - Entries, in the organization's currency.
+ * @param {ILedgerEntry} carrier - The credit entry that takes the remainder.
+ * @returns {ILedgerEntry[]}
+ */
+const roundToLedgerPrecision = (
+  entries: ILedgerEntry[],
+  carrier?: ILedgerEntry,
+): ILedgerEntry[] => {
+  const rounded = entries.map((entry) => ({
+    ...entry,
+    debit: toLedgerPrecision(entry.debit),
+    credit: toLedgerPrecision(entry.credit),
+  }));
+  const remainder =
+    toLedgerUnits(getNetDebit(rounded)) - toLedgerUnits(getNetDebit(entries));
+  const carrierIndex = entries.indexOf(carrier);
+
+  if (remainder !== 0 && carrierIndex >= 0) {
+    const carrierEntry = rounded[carrierIndex];
+
+    rounded[carrierIndex] = {
+      ...carrierEntry,
+      credit: (toLedgerUnits(carrierEntry.credit) + remainder) / LEDGER_UNITS,
+    };
+  }
+  return rounded;
+};
 
 export class InvoiceAccrualGL {
   private saleInvoice: SaleInvoice;
@@ -102,15 +155,19 @@ export class InvoiceAccrualGL {
 
   /**
    * Retrieve item income entry of the invoice.
+   * A tax-inclusive line's income excludes its allocated line tax.
    * @param {ItemEntry} entry - Item entry.
+   * @param {number} lineTax - The line tax, allocated to the stored document tax.
    * @param {number} index - Index.
    * @returns {ILedgerEntry}
    */
   private getInvoiceItemEntry = R.curry(
-    (entry: ItemEntry, index: number): ILedgerEntry => {
+    (entry: ItemEntry, lineTax: number, index: number): ILedgerEntry => {
       const commonEntry = this.invoiceGLCommonEntry;
+      const includedTax = entry.isInclusiveTax ? lineTax : 0;
       const localAmount =
-        entry.totalExcludingTax * this.saleInvoice.exchangeRate;
+        (entry.amount - includedTax - entry.discountAmount) *
+        this.saleInvoice.exchangeRate;
 
       return {
         ...commonEntry,
@@ -127,24 +184,23 @@ export class InvoiceAccrualGL {
   );
 
   /**
-   * Retreives the GL entry of tax payable.
-   * @param {ItemEntry} entry - Item entry.
-   * @param {number} index - Index.
-   * @returns {ILedgerEntry}
+   * Retreives the GL entries of tax payable, one per taxed line.
+   * @param {number[]} lineTaxes - Line taxes, allocated to the stored document tax.
+   * @returns {ILedgerEntry[]}
    */
-  private getInvoiceTaxEntry(entry: ItemEntry, index: number): ILedgerEntry {
-    const commonEntry = this.invoiceGLCommonEntry;
-
-    return {
-      ...commonEntry,
-      credit: entry.taxAmount * this.saleInvoice.exchangeRate,
-      accountId: this.taxPayableAccountId,
-      index: index + 1,
+  private getInvoiceTaxEntries(lineTaxes: number[]): ILedgerEntry[] {
+    return buildTaxLedgerEntries({
+      taxes: this.saleInvoice.entries.map((entry, index) => ({
+        amount: lineTaxes[index] * this.saleInvoice.exchangeRate,
+        taxRateId: entry.taxRateId,
+        taxRate: entry.taxRate,
+      })),
+      side: 'credit',
+      taxPayableAccountId: this.taxPayableAccountId,
+      commonEntry: this.invoiceGLCommonEntry,
       indexGroup: 30,
-      accountNormal: AccountNormal.CREDIT,
-      taxRateId: entry.taxRateId,
-      taxRate: entry.taxRate,
-    };
+      startIndex: 1,
+    });
   }
 
   /**
@@ -182,24 +238,36 @@ export class InvoiceAccrualGL {
   }
 
   /**
-   * Retrieves the invoice GL entries.
+   * Retrieves the invoice GL entries, rounded to the ledger precision.
+   * The rounding remainder goes on the largest income entry.
    * @returns {ILedgerEntry[]}
    */
   public getInvoiceGLEntries = (): ILedgerEntry[] => {
+    const lineTaxes = getDocumentLineTaxes(this.saleInvoice);
     const creditEntries = this.saleInvoice.entries.map((entry, index) =>
-      this.getInvoiceItemEntry(entry, index),
+      this.getInvoiceItemEntry(entry, lineTaxes[index], index),
     );
-    const taxEntries = this.saleInvoice.entries
-      .filter((entry) => entry.taxAmount > 0)
-      .map((entry, index) => this.getInvoiceTaxEntry(entry, index));
+    const taxEntries = this.getInvoiceTaxEntries(lineTaxes);
 
-    return [
-      this.invoiceReceivableEntry,
-      ...creditEntries,
-      ...taxEntries,
-      this.invoiceDiscountEntry,
-      this.adjustmentEntry,
-    ];
+    // The largest income entry by absolute amount, the first one on a tie.
+    const largestCreditEntry = creditEntries.reduce(
+      (largest, entry) =>
+        !largest || Math.abs(entry.credit) > Math.abs(largest.credit)
+          ? entry
+          : largest,
+      undefined as ILedgerEntry | undefined,
+    );
+
+    return roundToLedgerPrecision(
+      [
+        this.invoiceReceivableEntry,
+        ...creditEntries,
+        ...taxEntries,
+        this.invoiceDiscountEntry,
+        this.adjustmentEntry,
+      ],
+      largestCreditEntry,
+    );
   };
 
   /**
