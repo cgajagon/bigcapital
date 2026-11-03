@@ -1,64 +1,17 @@
 import * as R from 'ramda';
-import { roundHalfAwayFromZero } from '@bigcapital/utils';
 import { ILedger } from '@/modules/Ledger/types/Ledger.types';
 import { AccountNormal } from '@/modules/Accounts/Accounts.types';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
 import { Ledger } from '@/modules/Ledger/Ledger';
+import {
+  getLargestLedgerEntry,
+  roundToLedgerPrecision,
+} from '@/modules/Ledger/LedgerPrecision';
 import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
 import { buildTaxLedgerEntries } from '@/modules/TaxRates/TaxLedgerEntries';
 import { SaleInvoice } from '../models/SaleInvoice';
 import { AccountingBasis } from '@/common/types/AccountingBasis';
-
-// `accounts_transactions` stores debit and credit as decimal(13,3).
-const LEDGER_DECIMALS = 3;
-const LEDGER_UNITS = 10 ** LEDGER_DECIMALS;
-
-const toLedgerPrecision = (amount: number | null | undefined): number =>
-  roundHalfAwayFromZero(amount || 0, LEDGER_DECIMALS);
-
-const toLedgerUnits = (amount: number): number =>
-  Math.round(amount * LEDGER_UNITS);
-
-const getNetDebit = (entries: ILedgerEntry[]): number =>
-  entries.reduce(
-    (sum, entry) => sum + (entry.debit || 0) - (entry.credit || 0),
-    0,
-  );
-
-/**
- * Rounds the entries to the ledger precision. The remainder that rounding
- * leaves between debits and credits goes on the carrier (a credit entry), so
- * a journal that balances before rounding balances exactly once stored.
- * A difference the entries already had before rounding (line discounts, which
- * the invoice total leaves out) is not a rounding remainder and is left as is.
- * @param {ILedgerEntry[]} entries - Entries, in the organization's currency.
- * @param {ILedgerEntry} carrier - The credit entry that takes the remainder.
- * @returns {ILedgerEntry[]}
- */
-const roundToLedgerPrecision = (
-  entries: ILedgerEntry[],
-  carrier?: ILedgerEntry,
-): ILedgerEntry[] => {
-  const rounded = entries.map((entry) => ({
-    ...entry,
-    debit: toLedgerPrecision(entry.debit),
-    credit: toLedgerPrecision(entry.credit),
-  }));
-  const remainder =
-    toLedgerUnits(getNetDebit(rounded)) - toLedgerUnits(getNetDebit(entries));
-  const carrierIndex = entries.indexOf(carrier);
-
-  if (remainder !== 0 && carrierIndex >= 0) {
-    const carrierEntry = rounded[carrierIndex];
-
-    rounded[carrierIndex] = {
-      ...carrierEntry,
-      credit: (toLedgerUnits(carrierEntry.credit) + remainder) / LEDGER_UNITS,
-    };
-  }
-  return rounded;
-};
 
 export class InvoiceAccrualGL {
   private saleInvoice: SaleInvoice;
@@ -250,13 +203,7 @@ export class InvoiceAccrualGL {
     const taxEntries = this.getInvoiceTaxEntries(lineTaxes);
 
     // The largest income entry by absolute amount, the first one on a tie.
-    const largestCreditEntry = creditEntries.reduce(
-      (largest, entry) =>
-        !largest || Math.abs(entry.credit) > Math.abs(largest.credit)
-          ? entry
-          : largest,
-      undefined as ILedgerEntry | undefined,
-    );
+    const largestCreditEntry = getLargestLedgerEntry(creditEntries, 'credit');
 
     return roundToLedgerPrecision(
       [

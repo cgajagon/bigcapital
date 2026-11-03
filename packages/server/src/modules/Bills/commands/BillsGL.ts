@@ -5,6 +5,12 @@ import { Bill } from '../models/Bill';
 import { AccountNormal } from '@/modules/Accounts/Accounts.types';
 import { Ledger } from '@/modules/Ledger/Ledger';
 import {
+  getLargestLedgerEntry,
+  roundToLedgerPrecision,
+} from '@/modules/Ledger/LedgerPrecision';
+import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
+import { buildTaxLedgerEntries } from '@/modules/TaxRates/TaxLedgerEntries';
+import {
   IBillItemAllocatedCost,
   IBillLandedCostLedgerEntry,
 } from '../integrations/BillLandedCostsBridge';
@@ -83,12 +89,21 @@ export class BillGL {
 
   /**
    * Retrieves the bill item inventory/cost entry.
-   * @param {ItemEntry} entry -
-   * @param {number} index -
+   * A tax-inclusive line's expense excludes its allocated line tax.
+   * @param {ItemEntry} entry - Item entry.
+   * @param {number} lineTax - The line tax, allocated to the stored document tax.
+   * @param {number} index - Index.
    */
-  private getBillItemEntry(entry: ItemEntry, index: number): ILedgerEntry {
+  private getBillItemEntry(
+    entry: ItemEntry,
+    lineTax: number,
+    index: number,
+  ): ILedgerEntry {
     const commonJournalMeta = this.billCommonEntry;
-    const totalLocal = this.bill.exchangeRate * entry.totalExcludingTax;
+    const includedTax = entry.isInclusiveTax ? lineTax : 0;
+    const totalLocal =
+      this.bill.exchangeRate *
+      (entry.amount - includedTax - entry.discountAmount);
     const landedCostAmount = this.itemAllocatedCosts.get(entry.id) ?? 0;
 
     return {
@@ -145,36 +160,25 @@ export class BillGL {
   }
 
   /**
-   * Retrieves the bill tax GL entry.
-   * @param {IBill} bill -
-   * @param {number} taxPayableAccountId -
-   * @param {IItemEntry} entry -
-   * @param {number} index -
-   * @returns {ILedgerEntry}
-   */
-  private getBillTaxEntry(entry: ItemEntry, index: number): ILedgerEntry {
-    const commonJournalMeta = this.billCommonEntry;
-
-    return {
-      ...commonJournalMeta,
-      debit: entry.taxAmount * (this.bill.exchangeRate || 1),
-      index,
-      indexGroup: 30,
-      accountId: this.taxPayableAccountId,
-      accountNormal: AccountNormal.CREDIT,
-      taxRateId: entry.taxRateId,
-      taxRate: entry.taxRate,
-    };
-  }
-
-  /**
-   * Retrieves the bill tax GL entries.
+   * Retrieves the bill tax GL entries, one per taxed line.
+   * @param {number[]} lineTaxes - Line taxes, allocated to the stored document tax.
    * @returns {ILedgerEntry[]}
    */
-  private getBillTaxEntries = (): ILedgerEntry[] => {
-    return this.bill.entries
-      .filter((entry) => entry.taxAmount > 0)
-      .map((entry, index) => this.getBillTaxEntry(entry, index));
+  private getBillTaxEntries = (lineTaxes: number[]): ILedgerEntry[] => {
+    const exchangeRate = this.bill.exchangeRate || 1;
+
+    return buildTaxLedgerEntries({
+      taxes: this.bill.entries.map((entry, index) => ({
+        amount: lineTaxes[index] * exchangeRate,
+        taxRateId: entry.taxRateId,
+        taxRate: entry.taxRate,
+      })),
+      side: 'debit',
+      taxPayableAccountId: this.taxPayableAccountId,
+      commonEntry: this.billCommonEntry,
+      indexGroup: 30,
+      startIndex: 0,
+    });
   };
 
   /**
@@ -214,27 +218,35 @@ export class BillGL {
   }
 
   /**
-   * Retrieves the given bill GL entries.
+   * Retrieves the given bill GL entries, rounded to the ledger precision.
+   * The rounding remainder goes on the largest expense entry.
    * @returns {ILedgerEntry[]}
    */
   private getBillGLEntries = (): ILedgerEntry[] => {
     const payableEntry = this.billPayableEntry;
+    const lineTaxes = getDocumentLineTaxes(this.bill);
 
     const itemsEntries = this.bill.entries.map((entry, index) =>
-      this.getBillItemEntry(entry, index),
+      this.getBillItemEntry(entry, lineTaxes[index], index),
     );
     const landedCostEntries = this.landedCostLedgerEntries.map(
       (landedCost, index) => this.getBillLandedCostEntry(landedCost, index),
     );
+    // The largest expense entry by absolute amount, the first one on a tie.
+    const largestDebitEntry = getLargestLedgerEntry(itemsEntries, 'debit');
 
-    return [
-      payableEntry,
-      ...itemsEntries,
-      ...landedCostEntries,
-      ...this.getBillTaxEntries(),
-      this.purchaseDiscountEntry,
-      this.adjustmentEntry,
-    ];
+    return roundToLedgerPrecision(
+      [
+        payableEntry,
+        ...itemsEntries,
+        ...landedCostEntries,
+        ...this.getBillTaxEntries(lineTaxes),
+        this.purchaseDiscountEntry,
+        this.adjustmentEntry,
+      ],
+      largestDebitEntry,
+      'debit',
+    );
   };
 
   /**
