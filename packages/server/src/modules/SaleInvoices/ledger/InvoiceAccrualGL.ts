@@ -214,6 +214,7 @@ export class InvoiceAccrualGL {
         this.adjustmentEntry,
       ],
       largestCreditEntry,
+      'credit',
     );
   };
 

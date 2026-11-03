@@ -41,20 +41,30 @@ export const getLargestLedgerEntry = (
 
 /**
  * Rounds the entries to the ledger precision. The remainder that rounding
- * leaves between debits and credits goes on the carrier, on its `carrierSide`,
+ * leaves between debits and credits goes on the carrier, on `carrierSide`,
  * so a journal that balances before rounding balances exactly once stored.
  * A difference the entries already had before rounding is not a rounding
  * remainder and is left as is.
+ * The carrier is matched by identity, so it must be one of the `entries`
+ * objects, not a copy; the side is explicit because a carrier with both sides
+ * at 0 has no side to infer.
  * @param {ILedgerEntry[]} entries - Entries, in the organization's currency.
- * @param {ILedgerEntry} carrier - One of `entries`, takes the remainder.
+ * @param {ILedgerEntry | undefined} carrier - One of `entries`, takes the
+ *   remainder; `undefined` when the journal has no entry to carry it.
  * @param {LedgerSide} carrierSide - The side of the carrier that is adjusted.
  * @returns {ILedgerEntry[]} Rounded copies, in the same order.
+ * @throws {Error} When `carrier` is given but is not one of `entries`.
  */
 export const roundToLedgerPrecision = (
   entries: ILedgerEntry[],
-  carrier?: ILedgerEntry,
-  carrierSide: LedgerSide = 'credit',
+  carrier: ILedgerEntry | undefined,
+  carrierSide: LedgerSide,
 ): ILedgerEntry[] => {
+  const carrierIndex = carrier ? entries.indexOf(carrier) : -1;
+
+  if (carrier && carrierIndex < 0) {
+    throw new Error('The rounding carrier is not one of the ledger entries.');
+  }
   const rounded = entries.map((entry) => ({
     ...entry,
     debit: toLedgerPrecision(entry.debit),
@@ -63,7 +73,6 @@ export const roundToLedgerPrecision = (
   // Net debit the rounding added; the carrier takes it back.
   const remainder =
     toLedgerUnits(getNetDebit(rounded)) - toLedgerUnits(getNetDebit(entries));
-  const carrierIndex = entries.indexOf(carrier);
 
   if (remainder !== 0 && carrierIndex >= 0) {
     const carrierEntry = rounded[carrierIndex];
