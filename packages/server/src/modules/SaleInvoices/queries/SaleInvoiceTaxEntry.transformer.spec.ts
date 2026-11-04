@@ -51,4 +51,22 @@ describe('SaleInvoiceTaxEntryTransformer', () => {
     expect(b.taxRate).toBe(5);
     expect(b.taxRateAmount).toBe(2.5);
   });
+
+  it('shows a group component at its own name, snapshot rate and amount', () => {
+    const transformer = new SaleInvoiceTaxEntryTransformer();
+    transformer.setOptions({
+      lineTaxesByTaxRateId: { 2: 3.29 },
+      currencyCode: 'USD',
+    });
+    const result = transformer.work({
+      id: 20,
+      taxRateId: 2,
+      rate: 9.975,
+      taxRate: { id: 2, code: 'TVQ', name: 'TVQ', rate: 10 },
+    });
+
+    expect(result.name).toBe('TVQ');
+    expect(result.taxRate).toBe(9.975);
+    expect(result.taxRateAmount).toBe(3.29);
+  });
 });

@@ -550,7 +550,9 @@ export class SaleInvoice extends TenantBaseModel {
           to: 'items_entries.referenceId',
         },
         filter(builder) {
-          builder.where('reference_type', 'SaleInvoice');
+          builder
+            .where('reference_type', 'SaleInvoice')
+            .orderBy('tax_rate_transactions.id');
           builder.orderBy('index', 'ASC');
         },
       },

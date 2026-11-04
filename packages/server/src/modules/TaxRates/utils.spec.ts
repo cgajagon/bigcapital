@@ -3,6 +3,7 @@ import {
   allocateDocumentLineTaxes,
   getDocumentLineComponentTaxes,
   getDocumentLineTaxes,
+  getLineTaxesByTaxRateId,
 } from './utils';
 
 describe('allocateDocumentLineTaxes', () => {
@@ -146,5 +147,34 @@ describe('getDocumentLineComponentTaxes', () => {
 
   it('handles a document without entries', () => {
     expect(getDocumentLineComponentTaxes({ taxAmountWithheld: 1 })).toEqual([]);
+  });
+});
+
+describe('getLineTaxesByTaxRateId', () => {
+  const TPS = { taxRateId: 1, rate: 5 };
+  const TVQ = { taxRateId: 2, rate: 9.975 };
+  const groupLine = (amount: number) =>
+    ItemEntry.fromJson({
+      quantity: 1,
+      rate: amount,
+      taxRateId: 9,
+      taxRate: 14.975,
+      taxComponents: [TPS, TVQ],
+    });
+
+  it('keys a mixed plain and group document by component, never by group', () => {
+    const plain = ItemEntry.fromJson({
+      quantity: 1,
+      rate: 10,
+      taxRateId: 1,
+      taxRate: 5,
+    });
+
+    expect(
+      getLineTaxesByTaxRateId({
+        entries: [plain, groupLine(37.5), groupLine(-4.5)],
+        taxAmountWithheld: 5.44,
+      }),
+    ).toEqual({ 1: 2.15, 2: 3.29 });
   });
 });

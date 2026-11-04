@@ -1,4 +1,4 @@
-import { sumBy, chain, keyBy } from 'lodash';
+import { keyBy } from 'lodash';
 import { Knex } from 'knex';
 import { ModelObject } from 'objection';
 import { TenantModelProxy } from '../System/models/TenantBaseModel';
@@ -37,24 +37,26 @@ export class WriteTaxTransactionsItemEntries {
     );
     if (!isSalesTaxEnabled) return;
 
-    const aggregatedEntries = this.aggregateItemEntriesByTaxCode(itemEntries);
-    const entriesTaxRateIds = aggregatedEntries.map((entry) => entry.taxRateId);
+    const components = this.collectDistinctComponents(itemEntries);
+    const entriesTaxRateIds = components.map((entry) => entry.taxRateId);
 
     const taxRates = await this.taxRateModel()
       .query(trx)
       .whereIn('id', entriesTaxRateIds);
     const taxRatesById = keyBy(taxRates, 'id');
 
-    const taxTransactions = aggregatedEntries.map((entry) => ({
+    const taxTransactions = components.map((entry) => ({
       taxRateId: entry.taxRateId,
       referenceType: entry.referenceType,
       referenceId: entry.referenceId,
       // A line's stored 0 % is a real percentage, not a missing one.
-      rate: entry.taxRate ?? (taxRatesById[entry.taxRateId]?.rate as number),
+      rate: entry.rate ?? (taxRatesById[entry.taxRateId]?.rate as number),
     }));
     await this.taxRateTransactionModel()
       .query(trx)
-      .upsertGraph(taxTransactions as ModelObject<TaxRateTransaction>[]);
+      .upsertGraph(
+        taxTransactions as unknown as ModelObject<TaxRateTransaction>[],
+      );
   }
 
   /**
@@ -82,18 +84,41 @@ export class WriteTaxTransactionsItemEntries {
   }
 
   /**
-   * Aggregates by tax code id and sums the amount.
+   * Lists the distinct tax rates used by the entries, in line-then-component
+   * order. A group line counts for its snapshot components, never for the
+   * group; a plain line is one component with its own rate.
    * @param {IItemEntry[]} itemEntries
-   * @returns {IItemEntry[]}
    */
-  private aggregateItemEntriesByTaxCode = (
+  private collectDistinctComponents = (
     itemEntries: ModelObject<ItemEntry>[],
-  ): ModelObject<ItemEntry>[] => {
-    return chain(itemEntries.filter((item) => item.taxRateId))
-      .groupBy((item) => item.taxRateId)
-      .values()
-      .map((group) => ({ ...group[0], amount: sumBy(group, 'amount') }))
-      .value();
+  ) => {
+    const byRateId = new Map<
+      number,
+      {
+        taxRateId: number;
+        rate: number | null | undefined;
+        referenceType: string;
+        referenceId: ItemEntry['referenceId'];
+      }
+    >();
+    itemEntries
+      .filter((item) => item.taxRateId)
+      .forEach((item) => {
+        const components = item.taxComponents?.length
+          ? item.taxComponents
+          : [{ taxRateId: item.taxRateId, rate: item.taxRate }];
+
+        components.forEach((component) => {
+          if (byRateId.has(component.taxRateId)) return;
+          byRateId.set(component.taxRateId, {
+            taxRateId: component.taxRateId,
+            rate: component.rate,
+            referenceType: item.referenceType,
+            referenceId: item.referenceId,
+          });
+        });
+      });
+    return [...byRateId.values()];
   };
 
   /**

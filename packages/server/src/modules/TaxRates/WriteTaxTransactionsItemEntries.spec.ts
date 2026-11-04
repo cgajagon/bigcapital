@@ -50,4 +50,48 @@ describe('WriteTaxTransactionsItemEntries', () => {
       expect.objectContaining({ taxRateId: 1, rate: 5 }),
     ]);
   });
+
+  it('writes one row per distinct component, in line-then-component order', async () => {
+    const upsertGraph = jest.fn().mockResolvedValue([]);
+    const writer = new WriteTaxTransactionsItemEntries(
+      (() => ({ query: () => ({ upsertGraph }) })) as any,
+      (() => ({
+        query: () => ({
+          whereIn: async () => [
+            { id: 1, rate: 5 },
+            { id: 2, rate: 9.975 },
+          ],
+        }),
+      })) as any,
+      { accessible: async () => true } as any,
+    );
+    const ref = { referenceType: 'SaleInvoice', referenceId: 7 };
+    const components = [
+      { taxRateId: 1, rate: 5 },
+      { taxRateId: 2, rate: 9.975 },
+    ];
+
+    await writer.writeTaxTransactionsFromItemEntries([
+      { taxRateId: 1, taxRate: 5, amount: 10, ...ref },
+      {
+        taxRateId: 9,
+        taxRate: 14.975,
+        taxComponents: components,
+        amount: 37.5,
+        ...ref,
+      },
+      {
+        taxRateId: 9,
+        taxRate: 14.975,
+        taxComponents: components,
+        amount: -4.5,
+        ...ref,
+      },
+    ] as any);
+
+    expect(upsertGraph).toHaveBeenCalledWith([
+      { taxRateId: 1, rate: 5, ...ref },
+      { taxRateId: 2, rate: 9.975, ...ref },
+    ]);
+  });
 });

@@ -1,4 +1,8 @@
-import { roundHalfAwayFromZero, TaxComponentAmount } from '@bigcapital/utils';
+import {
+  aggregateComponentTaxes,
+  roundHalfAwayFromZero,
+  TaxComponentAmount,
+} from '@bigcapital/utils';
 import type { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
 
 /**
@@ -88,7 +92,8 @@ export const getDocumentLineComponentTaxes = (document: {
 };
 
 /**
- * Sums the allocated line taxes of a document per tax rate, rounded to cents.
+ * Sums the allocated line taxes of a document per component tax rate (a group
+ * line counts for its components, never for the group), rounded to cents.
  * @param document
  * @returns {Record<number, number>}
  */
@@ -96,15 +101,13 @@ export const getLineTaxesByTaxRateId = (document: {
   entries?: ItemEntry[];
   taxAmountWithheld?: number | null;
 }): Record<number, number> => {
-  const lineTaxes = getDocumentLineTaxes(document);
   const totals: Record<number, number> = {};
 
-  (document.entries ?? []).forEach((entry, index) => {
-    if (!entry.taxRateId) return;
-    totals[entry.taxRateId] = (totals[entry.taxRateId] ?? 0) + lineTaxes[index];
-  });
-  Object.keys(totals).forEach((id) => {
-    totals[id] = roundHalfAwayFromZero(totals[id]);
-  });
+  aggregateComponentTaxes(getDocumentLineComponentTaxes(document)).forEach(
+    (component) => {
+      if (!component.taxRateId) return;
+      totals[component.taxRateId] = component.amount;
+    },
+  );
   return totals;
 };

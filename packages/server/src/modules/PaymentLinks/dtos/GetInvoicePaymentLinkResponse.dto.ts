@@ -67,6 +67,9 @@ export class PaymentLinkTaxEntryDto {
   @ApiProperty({ description: 'Tax name' })
   name: string;
 
+  @ApiProperty({ description: 'Tax percentage stored on the document' })
+  taxRate: number;
+
   @ApiProperty({ description: 'Tax rate amount' })
   taxRateAmount: number;
 

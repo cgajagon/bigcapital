@@ -197,13 +197,19 @@ class GetInvoicePaymentLinkEntryMetaTransformer extends ItemEntryTransformer {
   };
 }
 
-class GetInvoicePaymentLinkTaxEntryTransformer extends SaleInvoiceTaxEntryTransformer {
+export class GetInvoicePaymentLinkTaxEntryTransformer extends SaleInvoiceTaxEntryTransformer {
   /**
    * Included attributes.
    * @returns {Array}
    */
   public includeAttributes = (): string[] => {
-    return ['name', 'taxRateCode', 'taxRateAmount', 'taxRateAmountFormatted'];
+    return [
+      'name',
+      'taxRateCode',
+      'taxRate',
+      'taxRateAmount',
+      'taxRateAmountFormatted',
+    ];
   };
 }
 
