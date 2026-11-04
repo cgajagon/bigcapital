@@ -184,7 +184,7 @@ export class PaymentReceivedCashGL {
     const cumulativeTax = (lineTax: number, paidAmount: number) =>
       roundHalfAwayFromZero(
         roundHalfAwayFromZero((lineTax * paidAmount) / invoice.total, 2) *
-          invoice.exchangeRate,
+          defaultTo(invoice.exchangeRate, 1),
         LEDGER_DECIMALS,
       );
 

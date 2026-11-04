@@ -1,5 +1,5 @@
 import { roundHalfAwayFromZero } from '@bigcapital/utils';
-import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
+import type { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
 
 /**
  * Adds the difference between the document's stored tax and the sum of the
