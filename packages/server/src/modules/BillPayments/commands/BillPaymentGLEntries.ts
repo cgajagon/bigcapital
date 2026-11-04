@@ -1,4 +1,6 @@
+import * as moment from 'moment';
 import { Knex } from 'knex';
+import { uniq } from 'lodash';
 import { BillPaymentAccrualGL } from './BillPaymentAccrualGL';
 import { BillPaymentCashGL } from './BillPaymentCashGL';
 import { Inject, Injectable } from '@nestjs/common';
@@ -6,6 +8,7 @@ import { LedgerStorageService } from '@/modules/Ledger/LedgerStorage.service';
 import { Ledger } from '@/modules/Ledger/Ledger';
 import { Account } from '@/modules/Accounts/models/Account.model';
 import { BillPayment } from '../models/BillPayment';
+import { BillPaymentEntry } from '../models/BillPaymentEntry';
 import { AccountRepository } from '@/modules/Accounts/repositories/Account.repository';
 import { TenancyContext } from '@/modules/Tenancy/TenancyContext.service';
 import { TenantModelProxy } from '@/modules/System/models/TenantBaseModel';
@@ -22,6 +25,11 @@ export class BillPaymentGLEntries {
 
     @Inject(Account.name)
     private readonly accountModel: TenantModelProxy<typeof Account>,
+
+    @Inject(BillPaymentEntry.name)
+    private readonly billPaymentEntryModel: TenantModelProxy<
+      typeof BillPaymentEntry
+    >,
   ) {}
 
   /**
@@ -87,6 +95,50 @@ export class BillPaymentGLEntries {
   };
 
   /**
+   * Retrieves the amount of each bill of the given payment that was paid
+   * before it, in the bill currency: the sum of the other payments' entries
+   * on the bill dated earlier, or on the same date with a lower id. The order
+   * is fixed, so rewriting any payment's journal gives the same amounts.
+   * @param {BillPayment} billPayment - Bill payment, with entries.
+   * @param {Knex.Transaction} trx - Knex transaction.
+   * @returns {Promise<Record<number, number>>} Paid amount by bill id.
+   */
+  public getBillsPaidBefore = async (
+    billPayment: BillPayment,
+    trx?: Knex.Transaction,
+  ): Promise<Record<number, number>> => {
+    const billsIds = uniq(
+      (billPayment.entries || []).map((entry) => entry.billId),
+    );
+    if (billsIds.length === 0) {
+      return {};
+    }
+    const paymentDate = moment(billPayment.paymentDate).format('YYYY-MM-DD');
+
+    const paidEntries = await this.billPaymentEntryModel()
+      .query(trx)
+      .joinRelated('payment')
+      .whereIn('bills_payments_entries.billId', billsIds)
+      .whereNot('payment.id', billPayment.id)
+      .where((query) =>
+        query
+          .where('payment.paymentDate', '<', paymentDate)
+          .orWhere((sameDateQuery) =>
+            sameDateQuery
+              .where('payment.paymentDate', paymentDate)
+              .where('payment.id', '<', billPayment.id),
+          ),
+      )
+      .groupBy('bills_payments_entries.billId')
+      .select('bills_payments_entries.billId')
+      .sum('bills_payments_entries.paymentAmount as paymentAmount');
+
+    return Object.fromEntries(
+      paidEntries.map((entry) => [entry.billId, Number(entry.paymentAmount)]),
+    );
+  };
+
+  /**
    * Retrieves the bill payment general ledger.
    * The ledger contains both the accrual basis entries (payment/A/P)
    * and the cash basis entries (payment/expenses) flagged by the basis.
@@ -130,7 +182,13 @@ export class BillPaymentGLEntries {
     const otherExpensesAccount =
       await this.accountRepository.findOrCreateOtherExpensesAccount({}, trx);
 
-    const billPaymentCashGL = new BillPaymentCashGL(billPayment)
+    // The amount of each bill paid by earlier payments.
+    const paidBeforeByBillId = await this.getBillsPaidBefore(billPayment, trx);
+
+    const billPaymentCashGL = new BillPaymentCashGL(
+      billPayment,
+      paidBeforeByBillId,
+    )
       .setTaxPayableAccountId(taxPayableAccount.id)
       .setPurchaseDiscountAccountId(purchaseDiscountAccount.id)
       .setOtherExpensesAccountId(otherExpensesAccount.id);

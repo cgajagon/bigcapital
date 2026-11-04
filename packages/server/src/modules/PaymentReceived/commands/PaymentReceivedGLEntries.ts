@@ -1,8 +1,11 @@
+import * as moment from 'moment';
 import { Knex } from 'knex';
+import { uniq } from 'lodash';
 import { PaymentReceivedAccrualGL } from './PaymentReceivedAccrualGL';
 import { PaymentReceivedCashGL } from './PaymentReceivedCashGL';
 import { PaymentReceivedCostGLEntries } from './PaymentReceivedCostGLEntries';
 import { PaymentReceived } from '../models/PaymentReceived';
+import { PaymentReceivedEntry } from '../models/PaymentReceivedEntry';
 import { LedgerStorageService } from '@/modules/Ledger/LedgerStorage.service';
 import { Ledger } from '@/modules/Ledger/Ledger';
 import { AccountRepository } from '@/modules/Accounts/repositories/Account.repository';
@@ -23,6 +26,11 @@ export class PaymentReceivedGLEntries {
     @Inject(PaymentReceived.name)
     private readonly paymentReceivedModel: TenantModelProxy<
       typeof PaymentReceived
+    >,
+
+    @Inject(PaymentReceivedEntry.name)
+    private readonly paymentReceivedEntryModel: TenantModelProxy<
+      typeof PaymentReceivedEntry
     >,
   ) {}
 
@@ -125,6 +133,54 @@ export class PaymentReceivedGLEntries {
   };
 
   /**
+   * Retrieves the amount of each invoice of the given payment that was paid
+   * before it, in the invoice currency: the sum of the other payments'
+   * entries on the invoice dated earlier, or on the same date with a lower
+   * id. The order is fixed, so rewriting any payment's journal gives the
+   * same amounts.
+   * @param {PaymentReceived} paymentReceive - Payment received, with entries.
+   * @param {Knex.Transaction} trx - Knex transaction.
+   * @returns {Promise<Record<number, number>>} Paid amount by invoice id.
+   */
+  public getInvoicesPaidBefore = async (
+    paymentReceive: PaymentReceived,
+    trx?: Knex.Transaction,
+  ): Promise<Record<number, number>> => {
+    const invoicesIds = uniq(
+      (paymentReceive.entries || []).map((entry) => entry.invoiceId),
+    );
+    if (invoicesIds.length === 0) {
+      return {};
+    }
+    const paymentDate = moment(paymentReceive.paymentDate).format('YYYY-MM-DD');
+
+    const paidEntries = await this.paymentReceivedEntryModel()
+      .query(trx)
+      .joinRelated('payment')
+      .whereIn('payment_receives_entries.invoiceId', invoicesIds)
+      .whereNot('payment.id', paymentReceive.id)
+      .where((query) =>
+        query
+          .where('payment.paymentDate', '<', paymentDate)
+          .orWhere((sameDateQuery) =>
+            sameDateQuery
+              .where('payment.paymentDate', paymentDate)
+              .where('payment.id', '<', paymentReceive.id),
+          ),
+      )
+      .groupBy('payment_receives_entries.invoiceId')
+      .select('payment_receives_entries.invoiceId')
+      .sum('payment_receives_entries.paymentAmount as paymentAmount');
+
+    return Object.fromEntries(
+      paidEntries.map((entry) => [
+        entry.invoiceId,
+        Number(entry.paymentAmount),
+      ]),
+    );
+  };
+
+  /**
    * Retrieves the payment receive cash basis ledger.
    * @param {PaymentReceived} paymentReceive - Payment received.
    * @param {Knex.Transaction} trx - Knex transaction.
@@ -144,7 +200,15 @@ export class PaymentReceivedGLEntries {
     const otherChargesAccount =
       await this.accountRepository.findOrCreateOtherChargesAccount({}, trx);
 
-    const paymentReceivedCashGL = new PaymentReceivedCashGL(paymentReceive)
+    // The amount of each invoice paid by earlier payments.
+    const paidBeforeByInvoiceId = await this.getInvoicesPaidBefore(
+      paymentReceive,
+      trx,
+    );
+    const paymentReceivedCashGL = new PaymentReceivedCashGL(
+      paymentReceive,
+      paidBeforeByInvoiceId,
+    )
       .setTaxPayableAccountId(taxPayableAccount.id)
       .setDiscountAccountId(discountAccount.id)
       .setOtherChargesAccountId(otherChargesAccount.id);

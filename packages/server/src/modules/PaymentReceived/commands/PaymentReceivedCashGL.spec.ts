@@ -1,6 +1,10 @@
+import { roundHalfAwayFromZero } from '@bigcapital/utils';
 import { PaymentReceivedCashGL } from './PaymentReceivedCashGL';
 import { PaymentReceived } from '../models/PaymentReceived';
 import { AccountingBasis } from '@/common/types/AccountingBasis';
+import { DiscountType } from '@/common/types/Discount';
+import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
+import { SaleInvoice } from '@/modules/SaleInvoices/models/SaleInvoice';
 
 interface TestItemEntry {
   itemId?: number;
@@ -15,6 +19,7 @@ interface TestItemEntry {
 interface TestInvoice {
   id: number;
   exchangeRate: number;
+  total?: number;
   totalLocal: number;
   entries: TestItemEntry[];
   discountAmountLocal?: number | null;
@@ -37,18 +42,23 @@ const buildItemEntry = (
 const buildInvoice = (
   entries: TestItemEntry[],
   overrides: Partial<TestInvoice> = {},
-): TestInvoice => ({
-  id: 10,
-  exchangeRate: 1,
-  totalLocal: entries.reduce(
-    (total, entry) => total + entry.totalExcludingTax + (entry.taxAmount || 0),
-    0,
-  ),
-  discountAmountLocal: null,
-  adjustmentLocal: null,
-  entries,
-  ...overrides,
-});
+): TestInvoice => {
+  const invoice = {
+    id: 10,
+    exchangeRate: 1,
+    totalLocal: entries.reduce(
+      (total, entry) =>
+        total + entry.totalExcludingTax + (entry.taxAmount || 0),
+      0,
+    ),
+    discountAmountLocal: null,
+    adjustmentLocal: null,
+    entries,
+    ...overrides,
+  };
+  // The invoice total in its currency, as the model derives it.
+  return { total: invoice.totalLocal / invoice.exchangeRate, ...invoice };
+};
 
 const buildPayment = () =>
   ({
@@ -72,8 +82,11 @@ const buildPaymentEntry = (invoice: TestInvoice, paymentAmount: number) => ({
   invoice,
 });
 
-const buildGL = (payment: PaymentReceived) =>
-  new PaymentReceivedCashGL(payment)
+const buildGL = (
+  payment: PaymentReceived,
+  paidBeforeByInvoiceId: Record<number, number> = {},
+) =>
+  new PaymentReceivedCashGL(payment, paidBeforeByInvoiceId)
     .setTaxPayableAccountId(200)
     .setDiscountAccountId(300)
     .setOtherChargesAccountId(400);
@@ -241,5 +254,168 @@ describe('PaymentReceivedCashGL', () => {
     );
     expect(totalDebit).toBeCloseTo(totalCredit, 2);
     expect(findEntry(entries, 100).debit).toBe(825);
+  });
+});
+
+describe('PaymentReceivedCashGL tax rounding', () => {
+  const DEPOSIT_ACCOUNT = 100;
+  const TAX_PAYABLE_ACCOUNT = 200;
+  const INCOME_ACCOUNT = 500;
+
+  // A real invoice model, so its total and line taxes are derived as saved.
+  const buildTaxedInvoice = (
+    amounts: number[],
+    overrides: Record<string, any> = {},
+  ): SaleInvoice =>
+    SaleInvoice.fromJson({
+      id: 10,
+      invoiceNo: 'INV-00001',
+      currencyCode: 'CAD',
+      exchangeRate: 1,
+      balance: amounts.reduce((total, amount) => total + amount, 0),
+      discount: 0,
+      discountType: DiscountType.Amount,
+      adjustment: 0,
+      isInclusiveTax: false,
+      entries: amounts.map((amount, index) => ({
+        index: index + 1,
+        itemId: 1,
+        sellAccountId: INCOME_ACCOUNT,
+        quantity: 1,
+        rate: amount,
+        discount: 0,
+        discountType: DiscountType.Amount,
+        taxRateId: 7,
+        taxRate: 14.975,
+        isInclusiveTax: false,
+      })),
+      ...overrides,
+    });
+
+  // The cash basis legs of a payment of `paymentAmount` on the invoice, when
+  // earlier payments paid `paidBefore` of it.
+  const payInvoice = (
+    invoice: SaleInvoice,
+    paymentAmount: number,
+    paidBefore: number,
+  ): ILedgerEntry[] => {
+    const payment = {
+      ...buildPayment(),
+      exchangeRate: invoice.exchangeRate,
+      entries: [{ invoiceId: invoice.id, paymentAmount, invoice }],
+    } as unknown as PaymentReceived;
+
+    return buildGL(payment, { [invoice.id]: paidBefore }).GLEntries();
+  };
+
+  const credits = (legs: ILedgerEntry[], accountId: number) =>
+    legs.filter((leg) => leg.accountId === accountId).map((leg) => leg.credit);
+  const tax = (legs: ILedgerEntry[]) => credits(legs, TAX_PAYABLE_ACCOUNT);
+  const income = (legs: ILedgerEntry[]) => credits(legs, INCOME_ACCOUNT);
+
+  // Σdebit and Σcredit agree in thousandths, the precision of accounts_transactions.
+  const balanced = (legs: ILedgerEntry[]) =>
+    Math.round(legs.reduce((sum, leg) => sum + (leg.debit || 0), 0) * 1000) ===
+    Math.round(legs.reduce((sum, leg) => sum + (leg.credit || 0), 0) * 1000);
+
+  // Every leg is already at the stored precision, so the database stores it as is.
+  const atStoredPrecision = (legs: ILedgerEntry[]) =>
+    legs.every(
+      (leg) =>
+        roundHalfAwayFromZero(leg.debit || 0, 3) === (leg.debit || 0) &&
+        roundHalfAwayFromZero(leg.credit || 0, 3) === (leg.credit || 0),
+    );
+
+  it('posts exactly the invoice tax over three payments, each journal balanced', () => {
+    // 100 at 14.975 %: tax 14.98, total 114.98.
+    const invoice = buildTaxedInvoice([100], { taxAmountWithheld: 14.98 });
+
+    const payments = [
+      payInvoice(invoice, 38.33, 0),
+      payInvoice(invoice, 38.33, 38.33),
+      payInvoice(invoice, 38.32, 76.66),
+    ];
+    const totalTax = payments
+      .flatMap(tax)
+      .reduce((total, amount) => total + amount, 0);
+
+    expect(payments.map(tax)).toEqual([[4.99], [5], [4.99]]);
+    expect(Math.round(totalTax * 1000)).toBe(14980);
+    expect(payments.map(income)).toEqual([[33.34], [33.33], [33.33]]);
+    payments.forEach((legs) => {
+      expect(balanced(legs)).toBe(true);
+      expect(atStoredPrecision(legs)).toBe(true);
+    });
+  });
+
+  it('counts an earlier entry of the same payment as paid before', () => {
+    const invoice = buildTaxedInvoice([100], { taxAmountWithheld: 14.98 });
+    const payment = {
+      ...buildPayment(),
+      entries: [38.33, 38.33, 38.32].map((paymentAmount) => ({
+        invoiceId: invoice.id,
+        paymentAmount,
+        invoice,
+      })),
+    } as unknown as PaymentReceived;
+
+    const legs = buildGL(payment).GLEntries();
+
+    expect(tax(legs)).toEqual([4.99, 5, 4.99]);
+    expect(balanced(legs)).toBe(true);
+  });
+
+  it('posts a negative tax entry for a negative line and balances', () => {
+    // 37.50 and -4.50 at 14.975 %: tax 5.62 and -0.67, total 37.95.
+    const invoice = buildTaxedInvoice([37.5, -4.5], {
+      taxAmountWithheld: 4.95,
+    });
+
+    const legs = payInvoice(invoice, 18.98, 0);
+
+    expect(tax(legs)).toEqual([2.81, -0.34]);
+    expect(income(legs)).toEqual([18.756, -2.246]);
+    expect(balanced(legs)).toBe(true);
+    expect(atStoredPrecision(legs)).toBe(true);
+  });
+
+  it('posts no entries and no NaN for a zero-total invoice', () => {
+    const invoice = buildTaxedInvoice([3, -3], { taxAmountWithheld: 0 });
+
+    const legs = payInvoice(invoice, 0, 0);
+
+    expect(legs).toEqual([]);
+  });
+
+  it('balances in the organization currency at exchange rate 1.3567', () => {
+    const invoice = buildTaxedInvoice([37.5, -4.5], {
+      taxAmountWithheld: 4.95,
+      exchangeRate: 1.3567,
+    });
+
+    const legs = payInvoice(invoice, 18.98, 0);
+
+    expect(findEntry(legs, DEPOSIT_ACCOUNT).debit).toBe(25.75);
+    expect(tax(legs)).toEqual([3.81, -0.45]);
+    expect(income(legs)).toEqual([25.448, -3.058]);
+    expect(balanced(legs)).toBe(true);
+    expect(atStoredPrecision(legs)).toBe(true);
+  });
+
+  it('puts the rounding remainder on the largest income entry', () => {
+    const invoice = buildInvoice([
+      buildItemEntry({ totalExcludingTax: 1 }),
+      buildItemEntry({ sellAccountId: 501, totalExcludingTax: 1 }),
+      buildItemEntry({ sellAccountId: 502, totalExcludingTax: 1 }),
+    ]);
+    const payment = {
+      ...buildPayment(),
+      entries: [buildPaymentEntry(invoice, 1)],
+    } as unknown as PaymentReceived;
+
+    const legs = buildGL(payment).GLEntries();
+
+    expect(legs.map((leg) => leg.credit)).toEqual([0, 0.334, 0.333, 0.333]);
+    expect(balanced(legs)).toBe(true);
   });
 });

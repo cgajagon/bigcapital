@@ -1,6 +1,13 @@
 import { defaultTo } from 'lodash';
+import { roundHalfAwayFromZero } from '@bigcapital/utils';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { Ledger } from '@/modules/Ledger/Ledger';
+import {
+  getLargestLedgerEntry,
+  roundToLedgerPrecision,
+} from '@/modules/Ledger/LedgerPrecision';
+import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
+import { buildTaxLedgerEntries } from '@/modules/TaxRates/TaxLedgerEntries';
 import { AccountNormal } from '@/interfaces/Account';
 import { PaymentReceived } from '../models/PaymentReceived';
 import { PaymentReceivedEntry } from '../models/PaymentReceivedEntry';
@@ -15,9 +22,17 @@ import { AccountingBasis } from '@/common/types/AccountingBasis';
  * The entries mirror the income composition of the invoice (the income
  * accounts, tax payable, discount, and other charges) scaled by the paid
  * proportion of the invoice.
+ *
+ * The tax of each line is recognized to the cent, cumulatively: a payment
+ * posts the increase in the line tax rounded on the amount paid so far, so
+ * the payments of a fully paid invoice post exactly its tax. The income of
+ * the line carries the rest of its share, and the entries of each invoice
+ * are rounded to the ledger precision with the remainder on the largest
+ * income entry.
  */
 export class PaymentReceivedCashGL {
   private readonly paymentReceived: PaymentReceived;
+  private readonly paidBeforeByInvoiceId: Record<number, number>;
 
   private taxPayableAccountId: number;
   private discountAccountId: number;
@@ -26,9 +41,15 @@ export class PaymentReceivedCashGL {
   /**
    * Constructor method.
    * @param {PaymentReceived} paymentReceived - Payment received.
+   * @param {Record<number, number>} paidBeforeByInvoiceId - Amount of each
+   *   invoice paid by earlier payments, in the invoice currency.
    */
-  constructor(paymentReceived: PaymentReceived) {
+  constructor(
+    paymentReceived: PaymentReceived,
+    paidBeforeByInvoiceId: Record<number, number>,
+  ) {
     this.paymentReceived = paymentReceived;
+    this.paidBeforeByInvoiceId = paidBeforeByInvoiceId;
   }
 
   /**
@@ -106,6 +127,7 @@ export class PaymentReceivedCashGL {
    * Retrieves the paid proportion of the associated invoice.
    * The paid amount in local currency over the invoice total in local
    * currency keeps the cash basis entries balanced for partial payments.
+   * It is 0 when the invoice total is not positive, so the entry posts nothing.
    * @param {PaymentReceivedEntry} entry - Payment received entry.
    * @returns {number}
    */
@@ -137,53 +159,102 @@ export class PaymentReceivedCashGL {
   };
 
   /**
+   * Retrieves the tax of each invoice line recognized by the given payment
+   * entry, in local currency.
+   * The tax recognized once `x` of the invoice is paid is
+   * `cum(x) = round(lineTax × exchangeRate × x / invoice total)`, to the cent;
+   * the entry posts `cum(paidBefore + paymentAmount) − cum(paidBefore)`.
+   * @param {SaleInvoice} invoice - Sale invoice, with a non-zero total.
+   * @param {number[]} lineTaxes - Line taxes, allocated to the stored invoice tax.
+   * @param {number} paidBefore - Amount of the invoice paid before the entry.
+   * @param {number} paymentAmount - Amount of the invoice paid by the entry.
+   * @returns {number[]}
+   */
+  private getPaymentEntryLineTaxes = (
+    invoice: SaleInvoice,
+    lineTaxes: number[],
+    paidBefore: number,
+    paymentAmount: number,
+  ): number[] => {
+    const cumulativeTax = (lineTax: number, paidAmount: number) =>
+      roundHalfAwayFromZero(
+        (lineTax * invoice.exchangeRate * paidAmount) / invoice.total,
+      );
+
+    return lineTaxes.map((lineTax) =>
+      lineTax === 0
+        ? 0
+        : roundHalfAwayFromZero(
+            cumulativeTax(lineTax, paidBefore + paymentAmount) -
+              cumulativeTax(lineTax, paidBefore),
+          ),
+    );
+  };
+
+  /**
    * Retrieves the income accounts credit entries mirroring the invoice items.
+   * Each line's share of the payment is its income plus its tax; the income
+   * entry carries the share less the tax the payment recognizes on the line.
    * @param {SaleInvoice} invoice - Sale invoice.
    * @param {number} ratio - Paid proportion of the invoice.
+   * @param {number[]} lineTaxes - Line taxes, allocated to the stored invoice tax.
+   * @param {number[]} paymentLineTaxes - Line taxes recognized by the payment.
    * @returns {ILedgerEntry[]}
    */
   private getPaymentEntryIncomeEntries = (
     invoice: SaleInvoice,
     ratio: number,
+    lineTaxes: number[],
+    paymentLineTaxes: number[],
   ): ILedgerEntry[] => {
     const invoiceEntries = invoice.entries || [];
 
-    return invoiceEntries.map((item, index) => ({
-      ...this.cashEntriesCommonEntry,
-      credit: item.totalExcludingTax * invoice.exchangeRate * ratio,
-      accountId: item.sellAccountId,
-      note: item.description,
-      index: index + 2,
-      itemId: item.itemId,
-      accountNormal: AccountNormal.CREDIT,
-      taxRateId: item.taxRateId,
-      taxRate: item.taxRate,
-    }));
+    return invoiceEntries.map((item, index) => {
+      // A tax-inclusive line's amount already includes its tax.
+      const lineTotal =
+        item.totalExcludingTax +
+        (item.isInclusiveTax ? item.taxAmount : lineTaxes[index]);
+
+      return {
+        ...this.cashEntriesCommonEntry,
+        credit:
+          lineTotal * invoice.exchangeRate * ratio - paymentLineTaxes[index],
+        accountId: item.sellAccountId,
+        note: item.description,
+        index: index + 2,
+        itemId: item.itemId,
+        accountNormal: AccountNormal.CREDIT,
+        taxRateId: item.taxRateId,
+        taxRate: item.taxRate,
+      };
+    });
   };
 
   /**
-   * Retrieves the tax payable credit entries mirroring the invoice taxes.
+   * Retrieves the tax payable credit entries mirroring the invoice taxes,
+   * one per taxed line; negative tax posts as a negative credit.
    * @param {SaleInvoice} invoice - Sale invoice.
-   * @param {number} ratio - Paid proportion of the invoice.
+   * @param {number[]} paymentLineTaxes - Line taxes recognized by the payment.
    * @returns {ILedgerEntry[]}
    */
   private getPaymentEntryTaxEntries = (
     invoice: SaleInvoice,
-    ratio: number,
+    paymentLineTaxes: number[],
   ): ILedgerEntry[] => {
     const invoiceEntries = invoice.entries || [];
 
-    return invoiceEntries
-      .filter((item) => item.taxAmount > 0)
-      .map((item, index) => ({
-        ...this.cashEntriesCommonEntry,
-        credit: item.taxAmount * invoice.exchangeRate * ratio,
-        accountId: this.taxPayableAccountId,
-        index: invoiceEntries.length + index + 2,
-        accountNormal: AccountNormal.CREDIT,
+    return buildTaxLedgerEntries({
+      taxes: invoiceEntries.map((item, index) => ({
+        amount: paymentLineTaxes[index],
         taxRateId: item.taxRateId,
         taxRate: item.taxRate,
-      }));
+      })),
+      side: 'credit',
+      taxPayableAccountId: this.taxPayableAccountId,
+      commonEntry: this.cashEntriesCommonEntry,
+      indexGroup: 50,
+      startIndex: invoiceEntries.length + 2,
+    });
   };
 
   /**
@@ -237,27 +308,51 @@ export class PaymentReceivedCashGL {
   };
 
   /**
-   * Retrieves the cash basis entries of the given payment entry (invoice allocation).
+   * Retrieves the cash basis entries of the given payment entry (invoice
+   * allocation), rounded to the ledger precision. The rounding remainder goes
+   * on the largest income entry.
    * @param {PaymentReceivedEntry} entry - Payment received entry.
+   * @param {number} paidBefore - Amount of the invoice paid before the entry.
    * @returns {ILedgerEntry[]}
    */
   private getPaymentEntryCashEntries = (
     entry: PaymentReceivedEntry,
+    paidBefore: number,
   ): ILedgerEntry[] => {
     const invoice = entry.invoice;
+    // A zero invoice total gives a zero ratio, so nothing divides by it.
     const ratio = this.getPaymentEntryRatio(entry);
 
     if (!invoice || ratio <= 0) {
       return [];
     }
+    const lineTaxes = getDocumentLineTaxes(invoice);
+    const paymentLineTaxes = this.getPaymentEntryLineTaxes(
+      invoice,
+      lineTaxes,
+      paidBefore,
+      entry.paymentAmount,
+    );
+    const incomeEntries = this.getPaymentEntryIncomeEntries(
+      invoice,
+      ratio,
+      lineTaxes,
+      paymentLineTaxes,
+    );
+    // The largest income entry by absolute amount, the first one on a tie.
+    const largestIncomeEntry = getLargestLedgerEntry(incomeEntries, 'credit');
 
-    return [
-      this.getPaymentEntryDepositEntry(entry),
-      ...this.getPaymentEntryIncomeEntries(invoice, ratio),
-      ...this.getPaymentEntryTaxEntries(invoice, ratio),
-      ...this.getPaymentEntryDiscountEntry(invoice, ratio),
-      ...this.getPaymentEntryAdjustmentEntry(invoice, ratio),
-    ];
+    return roundToLedgerPrecision(
+      [
+        this.getPaymentEntryDepositEntry(entry),
+        ...incomeEntries,
+        ...this.getPaymentEntryTaxEntries(invoice, paymentLineTaxes),
+        ...this.getPaymentEntryDiscountEntry(invoice, ratio),
+        ...this.getPaymentEntryAdjustmentEntry(invoice, ratio),
+      ],
+      largestIncomeEntry,
+      'credit',
+    );
   };
 
   /**
@@ -265,9 +360,15 @@ export class PaymentReceivedCashGL {
    * @returns {ILedgerEntry[]}
    */
   public GLEntries(): ILedgerEntry[] {
-    return (this.paymentReceived.entries || []).flatMap(
-      this.getPaymentEntryCashEntries,
-    );
+    // An earlier entry of this payment on the same invoice is paid before too.
+    const paidBefore = { ...this.paidBeforeByInvoiceId };
+
+    return (this.paymentReceived.entries || []).flatMap((entry) => {
+      const entryPaidBefore = defaultTo(paidBefore[entry.invoiceId], 0);
+      paidBefore[entry.invoiceId] = entryPaidBefore + entry.paymentAmount;
+
+      return this.getPaymentEntryCashEntries(entry, entryPaidBefore);
+    });
   }
 
   /**
