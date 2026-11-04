@@ -101,11 +101,23 @@ export const sumCredits = (legs: GLTestLeg[]) =>
  * Asserts the journal is balanced (total debits equal total credits).
  */
 export const expectBalanced = (legs: GLTestLeg[]) => {
-  const debits = sumDebits(legs);
-  const credits = sumCredits(legs);
+  // Compare in thousandths of a unit so a one-cent gap can never pass.
+  const debits = Math.round(sumDebits(legs) * 1000);
+  const credits = Math.round(sumCredits(legs) * 1000);
 
-  expect(debits).toBeCloseTo(credits, 2);
+  expect(debits).toBe(credits);
 };
+
+/**
+ * Amounts of every leg posted to the account code, as debit minus credit
+ * rounded to cents, in posting order.
+ */
+export const legNets = (legs: GLTestLeg[], accountCode: string): number[] =>
+  legs
+    .filter((l) => l.accountCode === accountCode)
+    .map(
+      (l) => Math.round((legAmount(l.debit) - legAmount(l.credit)) * 100) / 100,
+    );
 
 export interface GLExpectLeg {
   accountCode?: string;

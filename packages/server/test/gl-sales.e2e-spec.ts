@@ -11,6 +11,7 @@ import {
   expectLegs,
   fetchLegs,
   getBaseCurrency,
+  legNets,
 } from './_utils/gl';
 
 describe('GL entries — Sales transactions (e2e)', () => {
@@ -232,6 +233,125 @@ describe('GL entries — Sales transactions (e2e)', () => {
         ],
         'SaleInvoice',
       );
+    });
+  });
+
+  describe('Tax with negative lines (rate 14.975%)', () => {
+    let taxRate: number;
+
+    const createInvoice = async (lines: number[]) => {
+      const res = await request(app.getHttpServer())
+        .post('/sale-invoices')
+        .set(authHeaders())
+        .send({
+          customerId,
+          invoiceDate: '2023-01-01',
+          dueDate: '2023-02-01',
+          invoiceNo: faker.string.uuid(),
+          delivered: true,
+          branchId: 1,
+          warehouseId: 1,
+          entries: lines.map((rate, i) => ({
+            index: i + 1,
+            itemId,
+            quantity: 1,
+            rate,
+            taxRateId: taxRate,
+          })),
+        })
+        .expect(201);
+
+      return res.body.id as number;
+    };
+
+    // Sorted so the assertions do not depend on the posting order.
+    const sorted = (nums: number[]) => [...nums].sort((a, b) => a - b);
+
+    beforeAll(async () => {
+      taxRate = await createTaxRate(14.975);
+    });
+
+    it('posts exact tax legs for an invoice of 37.50 and -4.50', async () => {
+      const invoiceId = await createInvoice([37.5, -4.5]);
+      const legs = await fetchLegs('SaleInvoice', invoiceId);
+
+      expectBalanced(legs);
+      expect(legNets(legs, '10007')).toEqual([37.95]);
+      expect(sorted(legNets(legs, '50002'))).toEqual([-37.5, 4.5]);
+      expect(sorted(legNets(legs, '20006'))).toEqual([-5.62, 0.67]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/sale-invoices/${invoiceId}`)
+        .set(authHeaders())
+        .expect(200);
+
+      const tax = res.body.taxes[0];
+      expect(tax.tax_rate_amount).toBe(4.95);
+      expect(
+        Math.round(-legNets(legs, '20006').reduce((a, b) => a + b, 0) * 100) /
+          100,
+      ).toBe(tax.tax_rate_amount);
+    });
+
+    it('posts a balanced journal for a zero-total invoice of 3.00 and -3.00', async () => {
+      const invoiceId = await createInvoice([3, -3]);
+      const legs = await fetchLegs('SaleInvoice', invoiceId);
+
+      expectBalanced(legs);
+      expect(sorted(legNets(legs, '20006'))).toEqual([-0.45, 0.45]);
+    });
+
+    it('posts a balanced journal for a negative-total invoice of 4.50 and -37.50', async () => {
+      const invoiceId = await createInvoice([4.5, -37.5]);
+      const legs = await fetchLegs('SaleInvoice', invoiceId);
+
+      expectBalanced(legs);
+      expect(legNets(legs, '10007')).toEqual([-37.95]);
+    });
+
+    it('sums the three invoices in the sales tax liability summary', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/reports/sales-tax-liability-summary')
+        .set(authHeaders())
+        .query({
+          fromDate: '2023-01-01',
+          toDate: '2023-12-31',
+          basis: 'accrual',
+        })
+        .expect(200);
+
+      const row = res.body.data.tax_rates.find((r: any) => r.id === taxRate);
+      expect(row).toBeDefined();
+      // 4.95 + 0 - 4.95.
+      expect(row.tax_amount.amount).toBe(0);
+    });
+
+    it('posts the paid share of the tax on the cash basis', async () => {
+      const invoiceId = await createInvoice([100]);
+
+      const paymentRes = await request(app.getHttpServer())
+        .post('/payments-received')
+        .set(authHeaders())
+        .send({
+          customerId,
+          paymentDate: '2023-01-01',
+          exchangeRate: 1,
+          referenceNo: faker.string.uuid(),
+          depositAccountId: 1000,
+          paymentReceiveNo: faker.string.uuid(),
+          entries: [{ index: 1, invoiceId, paymentAmount: 38.33 }],
+          branchId: 1,
+        })
+        .expect(201);
+
+      const cashLegs = await fetchLegs(
+        'PaymentReceive',
+        paymentRes.body.id,
+        'cash',
+      );
+
+      expectBalanced(cashLegs);
+      expect(legNets(cashLegs, '20006')).toEqual([-4.99]);
     });
   });
 

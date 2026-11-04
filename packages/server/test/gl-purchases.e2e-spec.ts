@@ -7,6 +7,7 @@ import {
   createServiceItem,
   createTaxRate,
   createVendor,
+  legNets,
   expectBalanced,
   expectLegs,
   fetchLegs,
@@ -285,6 +286,40 @@ describe('GL entries — Purchases transactions (e2e)', () => {
         ],
         'Bill',
       );
+    });
+  });
+
+  describe('Bill with negative lines (rate 14.975%)', () => {
+    it('posts exact tax legs for a bill of 37.50 and -4.50', async () => {
+      const taxRate = await createTaxRate(14.975);
+
+      const res = await request(app.getHttpServer())
+        .post('/bills')
+        .set(authHeaders())
+        .send({
+          vendorId,
+          billDate: '2023-01-01',
+          dueDate: '2023-02-01',
+          billNumber: faker.string.alphanumeric(10),
+          open: true,
+          branchId: 1,
+          warehouseId: 1,
+          entries: [37.5, -4.5].map((rate, i) => ({
+            index: i + 1,
+            itemId,
+            quantity: 1,
+            rate,
+            taxRateId: taxRate,
+          })),
+        })
+        .expect(201);
+
+      const legs = await fetchLegs('Bill', res.body.id);
+
+      expectBalanced(legs);
+      expect([...legNets(legs, '20006')].sort((a, b) => a - b)).toEqual([
+        -0.67, 5.62,
+      ]);
     });
   });
 
