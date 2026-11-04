@@ -4,6 +4,7 @@ import React, { useCallback } from 'react';
 import { useItemEntriesTableContext } from './ItemEntriesTableProvider';
 import type { ItemEntry } from '@/interfaces/ItemEntries';
 import type { TaxRate } from '@bigcapital/sdk-ts';
+import { computeLineTaxAmount } from '@bigcapital/utils';
 import { useItem } from '@/hooks/query';
 import {
   toSafeNumber,
@@ -295,9 +296,9 @@ export function assignEntriesTaxAmount<T extends TaxableEntry>(
     list.map((entry) => {
       const amount = entry.amount as number;
       const taxRate = entry.taxRate as number;
-      const taxAmount = isInclusiveTax
-        ? getInclusiveTaxAmount(amount, taxRate)
-        : getExlusiveTaxAmount(amount, taxRate);
+      // Rounded to the cent like the server so the tax footer matches the
+      // saved document.
+      const taxAmount = computeLineTaxAmount(amount, taxRate, !!isInclusiveTax);
 
       return {
         ...entry,
@@ -306,26 +307,6 @@ export function assignEntriesTaxAmount<T extends TaxableEntry>(
     });
   return entries === undefined ? assignToEntries : assignToEntries(entries);
 }
-
-/**
- * Get inclusive tax amount.
- * @param {number} amount
- * @param {number} taxRate
- * @returns {number}
- */
-export const getInclusiveTaxAmount = (amount: number, taxRate: number) => {
-  return (amount * taxRate) / (100 + taxRate);
-};
-
-/**
- * Get exclusive tax amount.
- * @param {number} amount
- * @param {number} taxRate
- * @returns {number}
- */
-export const getExlusiveTaxAmount = (amount: number, taxRate: number) => {
-  return (amount * taxRate) / 100;
-};
 
 /**
  * Compose rows when edit a table cell.
