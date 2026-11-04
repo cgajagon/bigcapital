@@ -49,7 +49,8 @@ export class WriteTaxTransactionsItemEntries {
       taxRateId: entry.taxRateId,
       referenceType: entry.referenceType,
       referenceId: entry.referenceId,
-      rate: entry.taxRate || (taxRatesById[entry.taxRateId]?.rate as number),
+      // A line's stored 0 % is a real percentage, not a missing one.
+      rate: entry.taxRate ?? (taxRatesById[entry.taxRateId]?.rate as number),
     }));
     await this.taxRateTransactionModel()
       .query(trx)
