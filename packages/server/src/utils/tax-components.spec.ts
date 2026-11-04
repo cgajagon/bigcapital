@@ -60,3 +60,27 @@ describe('aggregateComponentTaxes', () => {
     ]);
   });
 });
+
+describe('string rates (decimal columns serialised as strings)', () => {
+  const strings = [
+    { taxRateId: 1, rate: '5.0000' as unknown as number },
+    { taxRateId: 2, rate: '9.9750' as unknown as number },
+  ];
+
+  it('component taxes match the numeric ones, inclusive', () => {
+    const out = computeLineComponentTaxes(114.975, strings, true);
+    expect(out.map((c) => c.amount)).toEqual([5, 9.98]);
+    expect(out.map((c) => c.rate)).toEqual([5, 9.975]);
+  });
+
+  it('component taxes match the numeric ones, exclusive', () => {
+    const out = computeLineComponentTaxes(37.5, strings, false);
+    expect(out.map((c) => c.amount)).toEqual([1.88, 3.74]);
+  });
+
+  it('a plain line with a string rate is not concatenated', () => {
+    expect(computeLineTaxAmount(105, '5.0000' as unknown as number, true)).toBe(
+      computeLineTaxAmount(105, 5, true),
+    );
+  });
+});

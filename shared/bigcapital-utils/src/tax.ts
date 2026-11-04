@@ -25,6 +25,10 @@ export const computeLineTaxAmount = (
   ratePercent: number,
   isInclusive: boolean,
 ): number => {
+  // Decimal columns can reach the client as strings ("5.0000"); a string rate
+  // would turn `100 + rate` into a concatenation.
+  amount = Number(amount);
+  ratePercent = Number(ratePercent);
   if (!ratePercent) return 0;
 
   const raw = isInclusive
@@ -52,9 +56,11 @@ export const computeLineComponentTaxes = (
   components: TaxComponentRate[],
   isInclusive: boolean,
 ): TaxComponentAmount[] => {
-  const totalRate = components.reduce((sum, c) => sum + c.rate, 0);
+  amount = Number(amount);
+  const rated = components.map((c) => ({ ...c, rate: Number(c.rate) }));
+  const totalRate = rated.reduce((sum, c) => sum + c.rate, 0);
 
-  return components.map(({ taxRateId, rate }) => ({
+  return rated.map(({ taxRateId, rate }) => ({
     taxRateId,
     rate,
     amount: !rate

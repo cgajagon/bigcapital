@@ -415,7 +415,7 @@ export function assignEntriesTaxAmount<T extends TaxableEntry>(
         ? [
             {
               taxRateId: entry.taxRateId as number,
-              rate: taxRate,
+              rate: Number(taxRate) || 0,
               amount: taxAmount,
             },
           ]
