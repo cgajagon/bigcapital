@@ -164,4 +164,46 @@ describe('Tax Rates (e2e)', () => {
       expect(Boolean((await getTaxRate(taxRateId)).active)).toBe(true);
     });
   });
+
+  describe('delete', () => {
+    const deleteTaxRate = (id: number) =>
+      request(app.getHttpServer())
+        .delete(`/tax-rates/${id}`)
+        .set(authHeaders());
+
+    it('refuses to delete a rate an invoice uses', async () => {
+      const taxRateId = await createTaxRate(10);
+      await createInvoice(
+        invoiceDTO(customerId, [{ itemId, rate: 1000, taxRateId }]),
+      );
+
+      const res = await deleteTaxRate(taxRateId).expect(400);
+
+      expect(res.body.errors[0].type).toBe('TAX_RATE_IN_USE');
+      await getTaxRate(taxRateId);
+    });
+
+    it('refuses to delete a rate that is only an item default', async () => {
+      const taxRateId = await createTaxRate(10);
+      await request(app.getHttpServer())
+        .post('/items')
+        .set(authHeaders())
+        .send({
+          name: `Tax default item ${faker.string.alphanumeric({ length: 8 })}`,
+          type: 'service',
+          sellable: true,
+          purchasable: true,
+          sellAccountId: 1026,
+          costAccountId: 1019,
+          costPrice: 100,
+          sellPrice: 100,
+          sellTaxRateId: taxRateId,
+        })
+        .expect(201);
+
+      const res = await deleteTaxRate(taxRateId).expect(400);
+
+      expect(res.body.errors[0].type).toBe('TAX_RATE_IN_USE');
+    });
+  });
 });
