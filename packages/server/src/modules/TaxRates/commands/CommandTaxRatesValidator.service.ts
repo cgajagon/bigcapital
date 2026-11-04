@@ -55,14 +55,21 @@ export class CommandTaxRatesValidators {
 
   /**
    * Validates the tax code uniquiness.
-   * @param {number} tenantId
    * @param {string} taxCode
    * @param {Knex.Transaction} trx -
+   * @param {number} exceptTaxRateId - The tax rate being edited, ignored.
    */
-  public async validateTaxCodeUnique(taxCode: string, trx?: Knex.Transaction) {
-    const foundTaxCode = await this.taxRateModel()
-      .query(trx)
-      .findOne({ code: taxCode });
+  public async validateTaxCodeUnique(
+    taxCode: string,
+    trx?: Knex.Transaction,
+    exceptTaxRateId?: number,
+  ) {
+    const query = this.taxRateModel().query(trx).findOne({ code: taxCode });
+
+    if (exceptTaxRateId) {
+      query.whereNot('id', exceptTaxRateId);
+    }
+    const foundTaxCode = await query;
 
     if (foundTaxCode) {
       throw new ServiceError(ERRORS.TAX_CODE_NOT_UNIQUE);
