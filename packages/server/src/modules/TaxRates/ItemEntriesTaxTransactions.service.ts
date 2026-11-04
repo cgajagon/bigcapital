@@ -6,6 +6,7 @@ import { TaxRateModel } from './models/TaxRate.model';
 import { TenantModelProxy } from '../System/models/TenantBaseModel';
 import { FeaturesManager } from '../Features/FeaturesManager';
 import { Features } from '@/common/types/Features';
+import { sumComponentRates } from './TaxRateGroups';
 import { applyDocumentTaxRates, getDocumentTaxRates } from './DocumentTaxRates';
 
 @Injectable()
@@ -78,13 +79,28 @@ export class ItemEntriesTaxTransactions {
     const taxRateIds = entriesWithId.map((e) => e.taxRateId);
     const foundTaxes = await this.taxRateModel()
       .query()
+      .withGraphFetched('components')
       .whereIn('id', taxRateIds);
 
     const taxRatesMap = keyBy(foundTaxes, 'id');
 
     return entries.map((entry) => {
       if (entry.taxRateId) {
-        entry.taxRate = taxRatesMap[entry.taxRateId]?.rate;
+        const found = taxRatesMap[entry.taxRateId];
+
+        if (found?.isGroup && found.components?.length) {
+          // A group line carries a snapshot of its components' percentages.
+          entry.taxComponents = found.components.map((c) => ({
+            taxRateId: c.id,
+            rate: Number(c.rate),
+          }));
+          entry.taxRate = sumComponentRates(
+            entry.taxComponents.map((c) => c.rate),
+          );
+        } else {
+          entry.taxRate = found?.rate;
+          entry.taxComponents = null;
+        }
       }
       return entry;
     });

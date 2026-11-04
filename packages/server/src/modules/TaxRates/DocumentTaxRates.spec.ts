@@ -88,3 +88,138 @@ describe('ItemEntriesTaxTransactions.assocDocumentTaxRatesToEntries', () => {
     ).resolves.toEqual([{ taxRateId: 1, taxRate: 20 }]);
   });
 });
+
+describe('group lines', () => {
+  const oldEntries: any[] = [
+    {
+      taxRateId: 9,
+      taxRate: 14.975,
+      taxComponents: [
+        { taxRateId: 1, rate: 5 },
+        { taxRateId: 2, rate: 9.975 },
+      ],
+    },
+    { taxRateId: 1, taxRate: 5, taxComponents: null },
+  ];
+
+  it('maps component ids to their stored percentages too, first one wins', () => {
+    expect(getDocumentTaxRates(oldEntries)).toEqual({
+      9: 14.975,
+      1: 5,
+      2: 9.975,
+    });
+    expect(
+      getDocumentTaxRates([
+        { taxRateId: 1, taxRate: 4 },
+        {
+          taxRateId: 9,
+          taxRate: 15,
+          taxComponents: [{ taxRateId: 1, rate: 5 }],
+        },
+      ] as any),
+    ).toEqual({ 1: 4, 9: 15 });
+  });
+
+  it('keeps the old components on every group line, without sharing arrays', () => {
+    const fresh = () => ({
+      taxRateId: 9,
+      taxRate: 15,
+      taxComponents: [
+        { taxRateId: 1, rate: 5 },
+        { taxRateId: 2, rate: 10 },
+      ],
+    });
+    const input = [fresh(), fresh()];
+    const out = applyDocumentTaxRates(input, getDocumentTaxRates(oldEntries));
+
+    out.forEach((line) => {
+      expect(line.taxRate).toBe(14.975);
+      expect(line.taxComponents).toEqual([
+        { taxRateId: 1, rate: 5 },
+        { taxRateId: 2, rate: 9.975 },
+      ]);
+    });
+    expect(out[0].taxComponents).not.toBe(out[1].taxComponents);
+    expect(input[0].taxComponents[1].rate).toBe(10);
+    expect(input[0].taxRate).toBe(15);
+  });
+
+  it('keeps the current components of a group the old document lacked', () => {
+    const out = applyDocumentTaxRates(
+      [
+        {
+          taxRateId: 10,
+          taxRate: 12,
+          taxComponents: [
+            { taxRateId: 3, rate: 7 },
+            { taxRateId: 4, rate: 5 },
+          ],
+        },
+      ],
+      getDocumentTaxRates(oldEntries),
+    );
+    expect(out[0].taxRate).toBe(12);
+    expect(out[0].taxComponents).toEqual([
+      { taxRateId: 3, rate: 7 },
+      { taxRateId: 4, rate: 5 },
+    ]);
+  });
+
+  it('keeps a plain line on its stored percentage', () => {
+    expect(
+      applyDocumentTaxRates(
+        [{ taxRateId: 1, taxRate: 5.5, taxComponents: null }],
+        getDocumentTaxRates(oldEntries),
+      ),
+    ).toEqual([{ taxRateId: 1, taxRate: 5, taxComponents: null }]);
+  });
+});
+
+describe('ItemEntriesTaxTransactions.assocTaxRateFromTaxIdToEntries', () => {
+  const rates = [
+    {
+      id: 9,
+      rate: '14.9750',
+      isGroup: true,
+      components: [
+        { id: 1, rate: '5.0000' },
+        { id: 2, rate: '9.9750' },
+      ],
+    },
+    { id: 1, rate: '5.0000', isGroup: false, components: [] },
+  ];
+  const buildService = () => {
+    const query: any = {
+      withGraphFetched: jest.fn(() => query),
+      whereIn: jest.fn(async (_c: string, ids: number[]) =>
+        rates.filter((r) => ids.includes(r.id)),
+      ),
+    };
+    return {
+      query,
+      service: new ItemEntriesTaxTransactions(
+        {} as any,
+        (() => ({ query: () => query })) as any,
+        { accessible: async () => true } as any,
+      ),
+    };
+  };
+
+  it('stamps a group line with its components and their sum', async () => {
+    const { service, query } = buildService();
+    const out: any[] = await service.assocTaxRateFromTaxIdToEntries([
+      { taxRateId: 9 },
+      { taxRateId: 1, taxComponents: [{ taxRateId: 5, rate: 1 }] },
+      {},
+    ] as any);
+
+    expect(query.withGraphFetched).toHaveBeenCalledWith('components');
+    expect(out[0].taxRate).toBe(14.975);
+    expect(out[0].taxComponents).toEqual([
+      { taxRateId: 1, rate: 5 },
+      { taxRateId: 2, rate: 9.975 },
+    ]);
+    expect(out[1].taxRate).toBe('5.0000');
+    expect(out[1].taxComponents).toBeNull();
+  });
+});

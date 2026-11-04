@@ -1,11 +1,14 @@
 /**
  * The percentage a document stored for each tax it uses, keyed by tax rate id.
  */
+import { sumComponentRates } from './TaxRateGroups';
+
 export type DocumentTaxRates = Record<number, number>;
 
 interface TaxedEntry {
   taxRateId?: number | null;
   taxRate?: number | string | null;
+  taxComponents?: { taxRateId: number; rate: number | string }[] | null;
 }
 
 /**
@@ -21,14 +24,22 @@ export const getDocumentTaxRates = (
 ): DocumentTaxRates => {
   const documentTaxRates: DocumentTaxRates = {};
 
+  const remember = (id: number, rate: number | string) => {
+    if (!(id in documentTaxRates)) documentTaxRates[id] = Number(rate);
+  };
+
   (entries || []).forEach((entry) => {
+    (entry.taxComponents || []).forEach((c) => {
+      if (c.rate !== null && c.rate !== undefined)
+        remember(c.taxRateId, c.rate);
+    });
     if (
       entry.taxRateId &&
       entry.taxRate !== null &&
       entry.taxRate !== undefined &&
       !(entry.taxRateId in documentTaxRates)
     ) {
-      documentTaxRates[entry.taxRateId] = Number(entry.taxRate);
+      remember(entry.taxRateId, entry.taxRate);
     }
   });
   return documentTaxRates;
@@ -45,9 +56,25 @@ export const applyDocumentTaxRates = <T extends TaxedEntry>(
   entries: T[],
   documentTaxRates: DocumentTaxRates,
 ): T[] => {
-  return entries.map((entry) =>
-    entry.taxRateId && entry.taxRateId in documentTaxRates
+  return entries.map((entry) => {
+    if (entry.taxComponents?.length) {
+      // A group line keeps each component's stored percentage; the group's own
+      // id never decides it.
+      const taxComponents = entry.taxComponents.map((c) => ({
+        ...c,
+        rate:
+          c.taxRateId in documentTaxRates
+            ? documentTaxRates[c.taxRateId]
+            : c.rate,
+      }));
+      return {
+        ...entry,
+        taxComponents,
+        taxRate: sumComponentRates(taxComponents.map((c) => Number(c.rate))),
+      };
+    }
+    return entry.taxRateId && entry.taxRateId in documentTaxRates
       ? { ...entry, taxRate: documentTaxRates[entry.taxRateId] }
-      : entry,
-  );
+      : entry;
+  });
 };
