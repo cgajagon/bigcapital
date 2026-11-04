@@ -20,6 +20,7 @@ import {
   updateItemsEntriesTotal,
   ensureEntriesHaveEmptyLine,
   assignEntriesTaxAmount,
+  assignSavedEntriesComponentTaxes,
   aggregateItemEntriesTaxRates,
 } from '@/containers/Entries/utils';
 import { useCurrentOrganizationBaseCurrency } from '@/hooks/query';
@@ -48,6 +49,7 @@ export type BillFormEntry = {
   taxRateId: string | number;
   taxRate: string | number;
   taxAmount: string | number;
+  taxComponents: Array<{ taxRateId: number; rate: number }> | null;
 };
 
 export type BillFormValues = {
@@ -83,6 +85,7 @@ export const defaultBillEntry: BillFormEntry = {
   taxRateId: '',
   taxRate: '',
   taxAmount: '',
+  taxComponents: null,
 };
 
 // Default bill.
@@ -137,6 +140,7 @@ export const transformToEditForm = (bill: Bill): BillFormValues => {
   const entries = FF.pipe(
     initialEntries,
     updateItemsEntriesTotal,
+    assignSavedEntriesComponentTaxes(!!bill.isInclusiveTax),
     ensureEntriesHaveEmptyLine(defaultBillEntry),
   );
 
@@ -350,7 +354,7 @@ export const composeEntriesOnEditInclusiveTax = (
 ): BillFormEntry[] => {
   return assignEntriesTaxAmount(inclusiveExclusiveTax === 'inclusive')(
     entries,
-  ) as BillFormEntry[];
+  ) as unknown as BillFormEntry[];
 };
 
 /**

@@ -36,7 +36,7 @@ export function PaymentInvoicePreviewContent() {
               total: entry.totalFormatted,
             }))}
             taxes={sharableLinkMeta?.taxes?.map((tax) => ({
-              label: tax.name,
+              label: `${tax.name} (${Number(tax.taxRate)}%)`,
               amount: tax.taxRateAmountFormatted,
             }))}
             companyAddress={

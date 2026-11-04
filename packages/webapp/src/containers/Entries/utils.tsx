@@ -1,10 +1,16 @@
-import { computeLineTaxAmount } from '@bigcapital/utils';
+import {
+  aggregateComponentTaxes,
+  computeLineComponentTaxes,
+  computeLineTaxAmount,
+  roundHalfAwayFromZero,
+} from '@bigcapital/utils';
 import * as FF from 'fp-ts/function';
-import { sumBy, isEmpty, last, keyBy, groupBy } from 'lodash';
+import { sumBy, isEmpty, last, keyBy } from 'lodash';
 import React, { useCallback } from 'react';
 import { useItemEntriesTableContext } from './ItemEntriesTableProvider';
 import type { ItemEntry } from '@/interfaces/ItemEntries';
 import type { TaxRate } from '@bigcapital/sdk-ts';
+import type { TaxComponentAmount, TaxComponentRate } from '@bigcapital/utils';
 import { isInactiveTaxRate } from '@/components/TaxRates/utils';
 import { useItem } from '@/hooks/query';
 import {
@@ -264,7 +270,7 @@ export const useComposeRowsOnNewRow = () => {
         orderingLinesIndexes,
         assignEntriesTaxRate(taxRates, documentTaxRates),
         assignEntriesTaxAmount(isInclusiveTax),
-      ) as ItemEntry[];
+      ) as unknown as ItemEntry[];
     };
   }, [isInclusiveTax, taxRates, documentTaxRates]);
 };
@@ -279,6 +285,10 @@ export const getEntriesDocumentTaxRates = (
   entries?: Array<{
     taxRateId?: number | string | null;
     taxRate?: number | string | null;
+    taxComponents?: Array<{
+      taxRateId?: number | string | null;
+      rate?: number | string | null;
+    }> | null;
   }>,
 ): Record<string, number> => {
   const documentTaxRates: Record<string, number> = {};
@@ -294,6 +304,19 @@ export const getEntriesDocumentTaxRates = (
     ) {
       documentTaxRates[key] = Number(entry.taxRate);
     }
+    // A group line's saved snapshot of each component's percentage.
+    (entry.taxComponents || []).forEach((component) => {
+      const componentKey = String(component.taxRateId ?? '');
+
+      if (
+        componentKey &&
+        component.rate !== null &&
+        component.rate !== undefined &&
+        !(componentKey in documentTaxRates)
+      ) {
+        documentTaxRates[componentKey] = Number(component.rate);
+      }
+    });
   });
   return documentTaxRates;
 };
@@ -306,15 +329,32 @@ export const getEntriesDocumentTaxRates = (
  */
 export const assignEntriesTaxRate =
   (taxRates?: TaxRate[], documentTaxRates: Record<string, number> = {}) =>
-  (entries: Array<{ taxRateId?: string | number }>) => {
+  <T extends { taxRateId?: string | number }>(entries: T[]) => {
     const taxRatesById = keyBy(taxRates, 'id');
 
     return entries.map((entry) => {
       const documentTaxRate = documentTaxRates[entry.taxRateId as string];
       const taxRate = taxRatesById[entry.taxRateId as string];
 
+      // A group line carries a snapshot of each component's percentage; its
+      // own rate is their sum.
+      if (taxRate?.isGroup && taxRate.components?.length) {
+        const taxComponents = taxRate.components.map((component) => ({
+          taxRateId: component.id,
+          rate: documentTaxRates[component.id] ?? Number(component.rate),
+        }));
+        return {
+          ...entry,
+          taxComponents,
+          taxRate: roundHalfAwayFromZero(
+            taxComponents.reduce((sum, c) => sum + c.rate, 0),
+            4,
+          ),
+        };
+      }
       return {
         ...entry,
+        taxComponents: null,
         taxRate:
           documentTaxRate !== undefined ? documentTaxRate : taxRate?.rate || 0,
       };
@@ -324,7 +364,14 @@ export const assignEntriesTaxRate =
 interface TaxableEntry {
   amount?: string | number;
   taxRate?: string | number;
+  taxRateId?: string | number;
+  taxComponents?: TaxComponentRate[] | null;
 }
+
+type TaxedEntry<T> = T & {
+  taxAmount: number;
+  componentTaxes: TaxComponentAmount[];
+};
 
 /**
  * Assign tax amount to entries.
@@ -335,10 +382,10 @@ interface TaxableEntry {
 export function assignEntriesTaxAmount<T extends TaxableEntry>(
   isInclusiveTax: boolean | undefined,
   entries: T[],
-): Array<T & { taxAmount: number }>;
+): Array<TaxedEntry<T>>;
 export function assignEntriesTaxAmount<T extends TaxableEntry>(
   isInclusiveTax: boolean | undefined,
-): (entries: T[]) => Array<T & { taxAmount: number }>;
+): (entries: T[]) => Array<TaxedEntry<T>>;
 export function assignEntriesTaxAmount<T extends TaxableEntry>(
   isInclusiveTax: boolean | undefined,
   entries?: T[],
@@ -349,15 +396,53 @@ export function assignEntriesTaxAmount<T extends TaxableEntry>(
       const taxRate = entry.taxRate as number;
       // Rounded to the cent like the server so the tax footer matches the
       // saved document.
+      if (entry.taxComponents?.length) {
+        const componentTaxes = computeLineComponentTaxes(
+          amount,
+          entry.taxComponents,
+          !!isInclusiveTax,
+        );
+        return {
+          ...entry,
+          componentTaxes,
+          taxAmount: roundHalfAwayFromZero(
+            componentTaxes.reduce((sum, c) => sum + c.amount, 0),
+          ),
+        };
+      }
       const taxAmount = computeLineTaxAmount(amount, taxRate, !!isInclusiveTax);
+      const componentTaxes: TaxComponentAmount[] = entry.taxRateId
+        ? [
+            {
+              taxRateId: entry.taxRateId as number,
+              rate: taxRate,
+              amount: taxAmount,
+            },
+          ]
+        : [];
 
       return {
         ...entry,
+        componentTaxes,
         taxAmount,
       };
     });
   return entries === undefined ? assignToEntries : assignToEntries(entries);
 }
+
+/**
+ * Re-derives the per-component taxes of a saved document's taxed lines, so the
+ * tax footer previews them before any line is edited.
+ * @param {boolean} isInclusiveTax
+ */
+export const assignSavedEntriesComponentTaxes =
+  <T extends TaxableEntry>(isInclusiveTax: boolean | undefined) =>
+  (entries: T[]): T[] =>
+    entries.map((entry) =>
+      entry.taxRateId
+        ? assignEntriesTaxAmount(isInclusiveTax, [entry])[0]
+        : entry,
+    );
 
 /**
  * Compose rows when edit a table cell.
@@ -382,7 +467,7 @@ export const useComposeRowsOnEditTableCell = () => {
         orderingLinesIndexes,
         assignEntriesTaxRate(taxRates, documentTaxRates),
         assignEntriesTaxAmount(isInclusiveTax),
-      ) as ItemEntry[];
+      ) as unknown as ItemEntry[];
     },
     [taxRates, documentTaxRates, isInclusiveTax, localValue, defaultEntry],
   );
@@ -425,35 +510,26 @@ export interface AggregatedItemEntryTaxRate {
 export const aggregateItemEntriesTaxRates =
   (currencyCode: string, taxRates?: TaxRate[]) =>
   (
-    entries: Array<{ taxRateId?: string | number; taxRate?: string | number }>,
+    entries: Array<{
+      taxRateId?: string | number;
+      componentTaxes?: TaxComponentAmount[];
+    }>,
   ): AggregatedItemEntryTaxRate[] => {
     const taxRatesById = keyBy(taxRates, 'id');
 
-    // Calculate the total tax amount of invoice entries.
-    const filteredEntries = entries.filter((e) => e.taxRateId);
-    const groupedTaxRates = groupBy(filteredEntries, 'taxRateId');
-
-    return Object.keys(groupedTaxRates).map((taxRateId) => {
-      const taxRate = taxRatesById[taxRateId];
-      const groupedEntries = groupedTaxRates[taxRateId];
-      const totalTaxAmount = sumBy(groupedEntries, 'taxAmount');
-      const taxAmountFormatted = formattedAmount(totalTaxAmount, currencyCode);
-
-      // The lines' own percentage, which a saved document keeps.
-      const entryTaxRate = groupedEntries[0]?.taxRate;
-      const rate =
-        entryTaxRate !== undefined &&
-        entryTaxRate !== null &&
-        entryTaxRate !== ''
-          ? Number(entryTaxRate)
-          : taxRate.rate;
+    // One row per component; a group never shows as a row of its own.
+    const aggregated = aggregateComponentTaxes(
+      entries.map((e) => e.componentTaxes ?? []),
+    );
+    return aggregated.map((component) => {
+      const rate = Number(component.rate);
 
       return {
-        taxRateId,
+        taxRateId: String(component.taxRateId),
         taxRate: rate,
-        label: `${taxRate.name} [${rate}%]`,
-        taxAmount: totalTaxAmount,
-        taxAmountFormatted,
+        label: `${taxRatesById[component.taxRateId]?.name ?? ''} [${rate}%]`,
+        taxAmount: component.amount,
+        taxAmountFormatted: formattedAmount(component.amount, currencyCode),
       };
     });
   };

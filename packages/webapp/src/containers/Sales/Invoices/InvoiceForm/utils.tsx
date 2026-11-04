@@ -21,6 +21,7 @@ import {
 import {
   aggregateItemEntriesTaxRates,
   assignEntriesTaxAmount,
+  assignSavedEntriesComponentTaxes,
   getEntriesTotal,
 } from '@/containers/Entries/utils';
 import { useCurrentOrganizationBaseCurrency } from '@/hooks/query';
@@ -46,6 +47,7 @@ export type InvoiceEntry = {
   taxRateId: string | number;
   taxRate: string | number;
   taxAmount: string | number;
+  taxComponents: Array<{ taxRateId: number; rate: number }> | null;
 };
 
 export type PaymentMethodFormValue = { enable: boolean };
@@ -95,6 +97,7 @@ export const defaultInvoiceEntry: InvoiceEntry = {
   taxRateId: '',
   taxRate: '',
   taxAmount: '',
+  taxComponents: null,
 };
 
 // Default invoice object.
@@ -156,6 +159,7 @@ export function transformToEditForm(
   const entries = FF.pipe(
     initialEntries,
     updateItemsEntriesTotal,
+    assignSavedEntriesComponentTaxes(!!invoice.isInclusiveTax),
     ensureEntriesHaveEmptyLine(defaultInvoiceEntry),
   );
 
