@@ -1,4 +1,3 @@
-import * as moment from 'moment';
 import { Knex } from 'knex';
 import { uniq } from 'lodash';
 import { PaymentReceivedAccrualGL } from './PaymentReceivedAccrualGL';
@@ -134,10 +133,10 @@ export class PaymentReceivedGLEntries {
 
   /**
    * Retrieves the amount of each invoice of the given payment that was paid
-   * before it, in the invoice currency: the sum of the other payments'
-   * entries on the invoice dated earlier, or on the same date with a lower
-   * id. The order is fixed, so rewriting any payment's journal gives the
-   * same amounts.
+   * before it, in the invoice currency: the sum of the entries on the invoice
+   * of the payments with a lower id. Ids follow the order the payments were
+   * saved in, whatever their dates, so the payments of an invoice add up to
+   * its exact tax, and rewriting a payment's journal reproduces it.
    * @param {PaymentReceived} paymentReceive - Payment received, with entries.
    * @param {Knex.Transaction} trx - Knex transaction.
    * @returns {Promise<Record<number, number>>} Paid amount by invoice id.
@@ -152,25 +151,13 @@ export class PaymentReceivedGLEntries {
     if (invoicesIds.length === 0) {
       return {};
     }
-    const paymentDate = moment(paymentReceive.paymentDate).format('YYYY-MM-DD');
-
     const paidEntries = await this.paymentReceivedEntryModel()
       .query(trx)
-      .joinRelated('payment')
-      .whereIn('payment_receives_entries.invoiceId', invoicesIds)
-      .whereNot('payment.id', paymentReceive.id)
-      .where((query) =>
-        query
-          .where('payment.paymentDate', '<', paymentDate)
-          .orWhere((sameDateQuery) =>
-            sameDateQuery
-              .where('payment.paymentDate', paymentDate)
-              .where('payment.id', '<', paymentReceive.id),
-          ),
-      )
-      .groupBy('payment_receives_entries.invoiceId')
-      .select('payment_receives_entries.invoiceId')
-      .sum('payment_receives_entries.paymentAmount as paymentAmount');
+      .whereIn('invoiceId', invoicesIds)
+      .where('paymentReceiveId', '<', paymentReceive.id)
+      .groupBy('invoiceId')
+      .select('invoiceId')
+      .sum('paymentAmount as paymentAmount');
 
     return Object.fromEntries(
       paidEntries.map((entry) => [

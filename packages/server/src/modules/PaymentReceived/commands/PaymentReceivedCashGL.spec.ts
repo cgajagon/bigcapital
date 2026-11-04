@@ -5,6 +5,7 @@ import { AccountingBasis } from '@/common/types/AccountingBasis';
 import { DiscountType } from '@/common/types/Discount';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { SaleInvoice } from '@/modules/SaleInvoices/models/SaleInvoice';
+import { InvoiceAccrualGL } from '@/modules/SaleInvoices/ledger/InvoiceAccrualGL';
 
 interface TestItemEntry {
   itemId?: number;
@@ -298,10 +299,12 @@ describe('PaymentReceivedCashGL tax rounding', () => {
     invoice: SaleInvoice,
     paymentAmount: number,
     paidBefore: number,
+    paymentOverrides: Record<string, any> = {},
   ): ILedgerEntry[] => {
     const payment = {
       ...buildPayment(),
       exchangeRate: invoice.exchangeRate,
+      ...paymentOverrides,
       entries: [{ invoiceId: invoice.id, paymentAmount, invoice }],
     } as unknown as PaymentReceived;
 
@@ -396,10 +399,82 @@ describe('PaymentReceivedCashGL tax rounding', () => {
     const legs = payInvoice(invoice, 18.98, 0);
 
     expect(findEntry(legs, DEPOSIT_ACCOUNT).debit).toBe(25.75);
-    expect(tax(legs)).toEqual([3.81, -0.45]);
-    expect(income(legs)).toEqual([25.448, -3.058]);
+    expect(tax(legs)).toEqual([3.812, -0.461]);
+    expect(income(legs)).toEqual([25.446, -3.047]);
     expect(balanced(legs)).toBe(true);
     expect(atStoredPrecision(legs)).toBe(true);
+  });
+
+  it('posts the accrual tax of a foreign-currency invoice once fully paid', () => {
+    const invoice = buildTaxedInvoice([37.5, -4.5], {
+      taxAmountWithheld: 4.95,
+      exchangeRate: 1.3567,
+    });
+    const accrualGL = new InvoiceAccrualGL(invoice);
+    accrualGL.setTaxPayableAccountId(TAX_PAYABLE_ACCOUNT);
+    const accrualTax = tax(accrualGL.getInvoiceGLEntries());
+
+    const payments = [
+      payInvoice(invoice, 18.98, 0),
+      payInvoice(invoice, 18.97, 18.98),
+    ];
+    const paidTax = [0, 1].map((line) =>
+      roundHalfAwayFromZero(
+        payments.reduce((total, legs) => total + tax(legs)[line], 0),
+        3,
+      ),
+    );
+
+    expect(payments.map(tax)).toEqual([
+      [3.812, -0.461],
+      [3.813, -0.448],
+    ]);
+    // round3(5.62 × 1.3567) and round3(-0.67 × 1.3567).
+    expect(paidTax).toEqual([7.625, -0.909]);
+    expect(paidTax).toEqual(accrualTax);
+    payments.forEach((legs) => {
+      expect(balanced(legs)).toBe(true);
+      expect(atStoredPrecision(legs)).toBe(true);
+    });
+  });
+
+  it('orders back-dated payments by id, so a rebuild reproduces each journal', () => {
+    const invoice = buildTaxedInvoice([100], { taxAmountWithheld: 14.98 });
+    // Saved in this order, so the ids follow it; the dates are out of order.
+    const saved = [
+      { id: 1, paymentDate: '2026-11-10', paymentAmount: 38.33 },
+      { id: 2, paymentDate: '2026-11-01', paymentAmount: 38.33 },
+      { id: 3, paymentDate: '2026-11-20', paymentAmount: 38.32 },
+    ];
+    // Paid before a payment: the payments with a lower id (Ruling R9), the
+    // rule `getInvoicesPaidBefore` queries (PaymentReceivedGLEntries.spec.ts).
+    const postTax = (
+      payment: (typeof saved)[number],
+      payments: typeof saved,
+    ) => {
+      const paidBefore = payments
+        .filter((other) => other.id < payment.id)
+        .reduce((total, other) => total + other.paymentAmount, 0);
+      const { id, paymentDate } = payment;
+
+      return tax(
+        payInvoice(invoice, payment.paymentAmount, paidBefore, {
+          id,
+          paymentDate,
+        }),
+      );
+    };
+    // First posted when saved, with the payments saved so far; rebuilt later
+    // with all of them.
+    const posted = saved.map((payment, index) =>
+      postTax(payment, saved.slice(0, index + 1)),
+    );
+    const rebuilt = saved.map((payment) => postTax(payment, saved));
+    const totalTax = posted.flat().reduce((total, amount) => total + amount, 0);
+
+    expect(posted).toEqual([[4.99], [5], [4.99]]);
+    expect(Math.round(totalTax * 1000)).toBe(14980);
+    expect(rebuilt).toEqual(posted);
   });
 
   it('puts the rounding remainder on the largest income entry', () => {

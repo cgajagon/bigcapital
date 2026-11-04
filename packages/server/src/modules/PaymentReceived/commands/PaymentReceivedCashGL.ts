@@ -4,6 +4,7 @@ import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { Ledger } from '@/modules/Ledger/Ledger';
 import {
   getLargestLedgerEntry,
+  LEDGER_DECIMALS,
   roundToLedgerPrecision,
 } from '@/modules/Ledger/LedgerPrecision';
 import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
@@ -23,10 +24,11 @@ import { AccountingBasis } from '@/common/types/AccountingBasis';
  * accounts, tax payable, discount, and other charges) scaled by the paid
  * proportion of the invoice.
  *
- * The tax of each line is recognized to the cent, cumulatively: a payment
- * posts the increase in the line tax rounded on the amount paid so far, so
- * the payments of a fully paid invoice post exactly its tax. The income of
- * the line carries the rest of its share, and the entries of each invoice
+ * The tax of each line is recognized to the cent in the invoice currency,
+ * cumulatively: a payment posts the increase in the line tax rounded on the
+ * amount paid so far, so the payments of a fully paid invoice post exactly
+ * the tax of the invoice journal. The income of the line carries the rest
+ * of its share, and the entries of each invoice
  * are rounded to the ledger precision with the remainder on the largest
  * income entry.
  */
@@ -161,9 +163,12 @@ export class PaymentReceivedCashGL {
   /**
    * Retrieves the tax of each invoice line recognized by the given payment
    * entry, in local currency.
-   * The tax recognized once `x` of the invoice is paid is
-   * `cum(x) = round(lineTax × exchangeRate × x / invoice total)`, to the cent;
-   * the entry posts `cum(paidBefore + paymentAmount) − cum(paidBefore)`.
+   * The tax recognized once `x` of the invoice is paid is rounded to the cent
+   * in the invoice currency, then converted to the ledger precision:
+   * `cum(x) = round3(round2(lineTax × x / invoice total) × exchangeRate)`.
+   * The entry posts `cum(paidBefore + paymentAmount) − cum(paidBefore)`, so
+   * the payments of a fully paid invoice post `round3(lineTax × exchangeRate)`,
+   * the invoice journal's tax entry.
    * @param {SaleInvoice} invoice - Sale invoice, with a non-zero total.
    * @param {number[]} lineTaxes - Line taxes, allocated to the stored invoice tax.
    * @param {number} paidBefore - Amount of the invoice paid before the entry.
@@ -178,7 +183,9 @@ export class PaymentReceivedCashGL {
   ): number[] => {
     const cumulativeTax = (lineTax: number, paidAmount: number) =>
       roundHalfAwayFromZero(
-        (lineTax * invoice.exchangeRate * paidAmount) / invoice.total,
+        roundHalfAwayFromZero((lineTax * paidAmount) / invoice.total, 2) *
+          invoice.exchangeRate,
+        LEDGER_DECIMALS,
       );
 
     return lineTaxes.map((lineTax) =>
@@ -187,6 +194,7 @@ export class PaymentReceivedCashGL {
         : roundHalfAwayFromZero(
             cumulativeTax(lineTax, paidBefore + paymentAmount) -
               cumulativeTax(lineTax, paidBefore),
+            LEDGER_DECIMALS,
           ),
     );
   };

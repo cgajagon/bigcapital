@@ -5,6 +5,7 @@ import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { Ledger } from '@/modules/Ledger/Ledger';
 import {
   getLargestLedgerEntry,
+  LEDGER_DECIMALS,
   roundToLedgerPrecision,
 } from '@/modules/Ledger/LedgerPrecision';
 import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
@@ -25,10 +26,11 @@ import { BillPaymentEntry } from '../models/BillPaymentEntry';
  * accounts, tax payable, discount, and other charges) scaled by the paid
  * proportion of the bill.
  *
- * The tax of each line is recognized to the cent, cumulatively: a payment
- * posts the increase in the line tax rounded on the amount paid so far, so
- * the payments of a fully paid bill post exactly its tax. The expense of the
- * line carries the rest of its share, and the entries of each bill are
+ * The tax of each line is recognized to the cent in the bill currency,
+ * cumulatively: a payment posts the increase in the line tax rounded on the
+ * amount paid so far, so the payments of a fully paid bill post exactly the
+ * tax of the bill journal. The expense of the line carries the rest of its
+ * share, and the entries of each bill are
  * rounded to the ledger precision with the remainder on the largest expense
  * entry.
  */
@@ -159,9 +161,12 @@ export class BillPaymentCashGL {
   /**
    * Retrieves the tax of each bill line recognized by the given payment
    * entry, in local currency.
-   * The tax recognized once `x` of the bill is paid is
-   * `cum(x) = round(lineTax × exchangeRate × x / bill total)`, to the cent;
-   * the entry posts `cum(paidBefore + paymentAmount) − cum(paidBefore)`.
+   * The tax recognized once `x` of the bill is paid is rounded to the cent
+   * in the bill currency, then converted to the ledger precision:
+   * `cum(x) = round3(round2(lineTax × x / bill total) × exchangeRate)`.
+   * The entry posts `cum(paidBefore + paymentAmount) − cum(paidBefore)`, so
+   * the payments of a fully paid bill post `round3(lineTax × exchangeRate)`,
+   * the bill journal's tax entry.
    * @param {Bill} bill - Bill, with a non-zero total.
    * @param {number[]} lineTaxes - Line taxes, allocated to the stored bill tax.
    * @param {number} paidBefore - Amount of the bill paid before the entry.
@@ -177,7 +182,9 @@ export class BillPaymentCashGL {
     const billExchangeRate = defaultTo(bill.exchangeRate, 1);
     const cumulativeTax = (lineTax: number, paidAmount: number) =>
       roundHalfAwayFromZero(
-        (lineTax * billExchangeRate * paidAmount) / bill.total,
+        roundHalfAwayFromZero((lineTax * paidAmount) / bill.total, 2) *
+          billExchangeRate,
+        LEDGER_DECIMALS,
       );
 
     return lineTaxes.map((lineTax) =>
@@ -186,6 +193,7 @@ export class BillPaymentCashGL {
         : roundHalfAwayFromZero(
             cumulativeTax(lineTax, paidBefore + paymentAmount) -
               cumulativeTax(lineTax, paidBefore),
+            LEDGER_DECIMALS,
           ),
     );
   };

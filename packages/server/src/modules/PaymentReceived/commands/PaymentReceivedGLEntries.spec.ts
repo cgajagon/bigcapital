@@ -39,7 +39,7 @@ describe('PaymentReceivedGLEntries.getInvoicesPaidBefore', () => {
       () => PaymentReceivedEntry.bindKnex(tenantKnex),
     );
 
-  it('sums the other payments of each invoice dated earlier, or the same date with a lower id', async () => {
+  it('sums the payments of each invoice with a lower id, whatever their dates', async () => {
     const payment = {
       id: 7,
       paymentDate: '2026-11-03',
@@ -50,27 +50,13 @@ describe('PaymentReceivedGLEntries.getInvoicesPaidBefore', () => {
 
     expect(paidBefore).toEqual({ 10: 76.66 });
     expect(executed).toHaveLength(1);
-    expect(executed[0].sql).toContain(
-      'sum(`PAYMENT_RECEIVES_ENTRIES`.`PAYMENT_AMOUNT`) as `PAYMENT_AMOUNT`',
+    expect(executed[0].sql).toBe(
+      'select `INVOICE_ID`, sum(`PAYMENT_AMOUNT`) as `PAYMENT_AMOUNT`' +
+        ' from `PAYMENT_RECEIVES_ENTRIES`' +
+        ' where `INVOICE_ID` in (?, ?) and `PAYMENT_RECEIVE_ID` < ?' +
+        ' group by `INVOICE_ID`',
     );
-    expect(executed[0].sql).toContain(
-      'inner join `PAYMENT_RECEIVES` as `PAYMENT` on `PAYMENT`.`ID` = `PAYMENT_RECEIVES_ENTRIES`.`PAYMENT_RECEIVE_ID`',
-    );
-    expect(executed[0].sql).toContain(
-      'where `PAYMENT_RECEIVES_ENTRIES`.`INVOICE_ID` in (?, ?)' +
-        ' and not `PAYMENT`.`ID` = ?' +
-        ' and (`PAYMENT`.`PAYMENT_DATE` < ?' +
-        ' or (`PAYMENT`.`PAYMENT_DATE` = ? and `PAYMENT`.`ID` < ?))' +
-        ' group by `PAYMENT_RECEIVES_ENTRIES`.`INVOICE_ID`',
-    );
-    expect(executed[0].bindings).toEqual([
-      10,
-      11,
-      7,
-      '2026-11-03',
-      '2026-11-03',
-      7,
-    ]);
+    expect(executed[0].bindings).toEqual([10, 11, 7]);
   });
 
   it('runs no query for a payment without entries', async () => {

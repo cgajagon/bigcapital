@@ -1,4 +1,3 @@
-import * as moment from 'moment';
 import { Knex } from 'knex';
 import { uniq } from 'lodash';
 import { BillPaymentAccrualGL } from './BillPaymentAccrualGL';
@@ -96,9 +95,10 @@ export class BillPaymentGLEntries {
 
   /**
    * Retrieves the amount of each bill of the given payment that was paid
-   * before it, in the bill currency: the sum of the other payments' entries
-   * on the bill dated earlier, or on the same date with a lower id. The order
-   * is fixed, so rewriting any payment's journal gives the same amounts.
+   * before it, in the bill currency: the sum of the entries on the bill of
+   * the payments with a lower id. Ids follow the order the payments were
+   * saved in, whatever their dates, so the payments of a bill add up to its
+   * exact tax, and rewriting a payment's journal reproduces it.
    * @param {BillPayment} billPayment - Bill payment, with entries.
    * @param {Knex.Transaction} trx - Knex transaction.
    * @returns {Promise<Record<number, number>>} Paid amount by bill id.
@@ -113,25 +113,13 @@ export class BillPaymentGLEntries {
     if (billsIds.length === 0) {
       return {};
     }
-    const paymentDate = moment(billPayment.paymentDate).format('YYYY-MM-DD');
-
     const paidEntries = await this.billPaymentEntryModel()
       .query(trx)
-      .joinRelated('payment')
-      .whereIn('bills_payments_entries.billId', billsIds)
-      .whereNot('payment.id', billPayment.id)
-      .where((query) =>
-        query
-          .where('payment.paymentDate', '<', paymentDate)
-          .orWhere((sameDateQuery) =>
-            sameDateQuery
-              .where('payment.paymentDate', paymentDate)
-              .where('payment.id', '<', billPayment.id),
-          ),
-      )
-      .groupBy('bills_payments_entries.billId')
-      .select('bills_payments_entries.billId')
-      .sum('bills_payments_entries.paymentAmount as paymentAmount');
+      .whereIn('billId', billsIds)
+      .where('billPaymentId', '<', billPayment.id)
+      .groupBy('billId')
+      .select('billId')
+      .sum('paymentAmount as paymentAmount');
 
     return Object.fromEntries(
       paidEntries.map((entry) => [entry.billId, Number(entry.paymentAmount)]),
