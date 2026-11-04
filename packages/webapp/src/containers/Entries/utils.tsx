@@ -4,7 +4,7 @@ import React, { useCallback } from 'react';
 import { useItemEntriesTableContext } from './ItemEntriesTableProvider';
 import type { ItemEntry } from '@/interfaces/ItemEntries';
 import type { TaxRate } from '@bigcapital/sdk-ts';
-import { isActiveTaxRate } from '@/components/TaxRates/utils';
+import { isInactiveTaxRate } from '@/components/TaxRates/utils';
 import { useItem } from '@/hooks/query';
 import {
   toSafeNumber,
@@ -190,9 +190,9 @@ export function useFetchItemRow({
           : item.sellTaxRateId;
 
       // An inactive default tax rate isn't applied to new lines.
-      const taxRateId = isActiveTaxRate(taxRates, defaultTaxRateId)
-        ? defaultTaxRateId
-        : null;
+      const taxRateId = isInactiveTaxRate(taxRates, defaultTaxRateId)
+        ? null
+        : defaultTaxRateId;
 
       // The new row.
       const newRow = {

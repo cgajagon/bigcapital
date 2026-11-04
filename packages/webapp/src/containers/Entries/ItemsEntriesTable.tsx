@@ -81,6 +81,7 @@ function ItemEntriesTableRoot() {
     currencyCode,
     landedCost,
     taxRates,
+    documentTaxRates,
     itemType,
   } = useItemEntriesTableContext();
 
@@ -132,6 +133,7 @@ function ItemEntriesTableRoot() {
       payload={{
         items,
         taxRates,
+        documentTaxRates,
         errors: errors || [],
         updateData: handleUpdateData,
         removeRow: handleRemoveRow,

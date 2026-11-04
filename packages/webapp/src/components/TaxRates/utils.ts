@@ -25,13 +25,36 @@ export const getSelectableTaxRates = (
   );
 
 /**
- * Determines whether the given tax rate id belongs to an active tax rate.
+ * Determines whether the given tax rate id belongs to a tax rate known to be
+ * inactive. A rate missing from the list (e.g. not loaded yet) isn't.
  * @param {TaxRate[]} taxRates - All the tax rates.
  * @param {TaxRateId} id - The tax rate id.
  * @returns {boolean}
  */
-export const isActiveTaxRate = (
+export const isInactiveTaxRate = (
   taxRates: TaxRate[] | undefined,
   id: TaxRateId,
-): boolean =>
-  !!(taxRates || []).find((taxRate) => isSameTaxRateId(taxRate, id))?.active;
+): boolean => {
+  const taxRate = (taxRates || []).find((rate) => isSameTaxRateId(rate, id));
+
+  return !!taxRate && !taxRate.active;
+};
+
+/**
+ * Labels the taxes a saved document already uses with the document's own
+ * percentage, which its lines keep, instead of the rate's current one.
+ * @param {TaxRate[]} taxRates - The tax rates to label.
+ * @param {Record<string, number>} documentTaxRates - The document's percentages.
+ * @returns {TaxRate[]}
+ */
+export const withDocumentTaxRateLabels = (
+  taxRates: TaxRate[],
+  documentTaxRates?: Record<string, number>,
+): TaxRate[] =>
+  taxRates.map((taxRate) => {
+    const documentTaxRate = documentTaxRates?.[String(taxRate.id)];
+
+    return documentTaxRate === undefined
+      ? taxRate
+      : { ...taxRate, nameFormatted: `${taxRate.name} [${documentTaxRate}%]` };
+  });
