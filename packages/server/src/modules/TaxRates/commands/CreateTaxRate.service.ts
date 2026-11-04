@@ -64,6 +64,11 @@ export class CreateTaxRate {
           createTaxRateDTO.componentIds,
         );
       }
+      if (isGroup) {
+        this.validators.validateGroupHasNoPayableAccount(
+          createTaxRateDTO.payableAccountId,
+        );
+      }
       await this.validators.validatePayableAccount(
         createTaxRateDTO.payableAccountId,
         trx,

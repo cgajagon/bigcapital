@@ -252,6 +252,23 @@ export class CommandTaxRatesValidators {
   }
 
   /**
+   * Validates a tax group has no payable account. Its entries are tagged with
+   * the component ids, so the group's own account would never be read.
+   * @param {number | null | undefined} accountId
+   * @throws {ServiceError}
+   */
+  public validateGroupHasNoPayableAccount(
+    accountId: number | null | undefined,
+  ) {
+    if (accountId === null || accountId === undefined) return;
+
+    throw new ServiceError(
+      ERRORS.TAX_PAYABLE_ACCOUNT_INVALID,
+      "A tax group posts to its components' payable accounts. Set the payable account on each component instead.",
+    );
+  }
+
+  /**
    * Validates the given tax rate isn't a component of any tax group.
    * @param {number} taxRateId
    * @param {Knex.Transaction} trx

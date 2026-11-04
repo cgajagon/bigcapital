@@ -80,6 +80,11 @@ export class EditTaxRateService {
         ? await this.saveGroupComponents(oldTaxRate, editTaxRateDTO, trx)
         : this.plainRate(editTaxRateDTO);
 
+      if (oldTaxRate.isGroup) {
+        this.validators.validateGroupHasNoPayableAccount(
+          editTaxRateDTO.payableAccountId,
+        );
+      }
       await this.validators.validatePayableAccount(
         editTaxRateDTO.payableAccountId,
         trx,

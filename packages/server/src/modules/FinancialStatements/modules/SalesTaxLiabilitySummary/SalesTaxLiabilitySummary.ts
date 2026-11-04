@@ -139,7 +139,9 @@ export class SalesTaxLiabilitySummary extends FinancialSheet {
   };
 
   /**
-   * Retrieves the tax rates total node.
+   * Retrieves the tax rates total node. The total "Taxable" sums each tax's
+   * taxable base, so a group's sales count once per component; the tax totals
+   * are exact.
    * @param {SalesTaxLiabilitySummaryRate[]} nodes
    * @returns {SalesTaxLiabilitySummaryTotal}
    */

@@ -214,6 +214,17 @@ describe('Tax rate groups (e2e)', () => {
 
         expect(res.body.errors[0].type).toBe('TAX_PAYABLE_ACCOUNT_INVALID');
       });
+
+      it('a payable account on a group', async () => {
+        const [tps, tvq] = await createTpsTvq();
+        const accountId = await createTaxPayableAccount();
+
+        const res = await postTaxRate(
+          groupBody([tps, tvq], { payableAccountId: accountId }),
+        ).expect(400);
+
+        expect(res.body.errors[0].type).toBe('TAX_PAYABLE_ACCOUNT_INVALID');
+      });
     });
   });
 
@@ -292,6 +303,54 @@ describe('Tax rate groups (e2e)', () => {
         tps,
         plainBody(5, { payableAccountId: accountA }),
       ).expect(200);
+    });
+
+    it('refuses to set a payable account on a group', async () => {
+      const [tps, tvq] = await createTpsTvq();
+      const groupId = await createTaxGroup([tps, tvq]);
+      const accountId = await createTaxPayableAccount();
+
+      const res = await editTaxRate(
+        groupId,
+        groupBody([tps, tvq], { payableAccountId: accountId }),
+      ).expect(400);
+
+      expect(res.body.errors[0].type).toBe('TAX_PAYABLE_ACCOUNT_INVALID');
+      expect((await getTaxRate(groupId)).payable_account_id).toBeNull();
+
+      // Omitted or null is fine.
+      await editTaxRate(groupId, groupBody([tps, tvq])).expect(200);
+      await editTaxRate(
+        groupId,
+        groupBody([tps, tvq], { payableAccountId: null }),
+      ).expect(200);
+    });
+
+    it('clears the payable account of an unused plain rate', async () => {
+      const accountId = await createTaxPayableAccount();
+      const tps = await createTaxRate(5, {
+        name: uniqueName('TPS'),
+        payableAccountId: accountId,
+      });
+      expect((await getTaxRate(tps)).payable_account_id).toBe(accountId);
+
+      await editTaxRate(tps, plainBody(5, { payableAccountId: null })).expect(
+        200,
+      );
+
+      expect((await getTaxRate(tps)).payable_account_id).toBeNull();
+    });
+
+    it('refuses to turn a group into a plain rate', async () => {
+      const [tps, tvq] = await createTpsTvq();
+      const groupId = await createTaxGroup([tps, tvq]);
+
+      const res = await editTaxRate(
+        groupId,
+        plainBody(14.975, { isGroup: false }),
+      ).expect(400);
+
+      expect(res.body.errors[0].type).toBe('TAX_RATE_TYPE_LOCKED');
     });
 
     it('refuses to turn a plain rate into a group', async () => {
