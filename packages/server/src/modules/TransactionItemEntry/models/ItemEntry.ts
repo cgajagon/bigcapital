@@ -10,6 +10,41 @@ import {
 } from '@bigcapital/utils';
 import { Model } from 'objection';
 
+/**
+ * The tax of a line split by tax rate: one item per snapshot component of a
+ * group line, a single item for a plain rate, none for an untaxed line. Works
+ * on model instances and on their plain `toJSON()` output alike.
+ */
+export const getEntryComponentTaxes = (entry: {
+  amount: number;
+  taxRate?: number | null;
+  taxRateId?: number | null;
+  isInclusiveTax?: number | boolean | null;
+  taxComponents?: TaxComponentRate[] | null;
+}): TaxComponentAmount[] => {
+  if (entry.taxComponents?.length) {
+    return computeLineComponentTaxes(
+      entry.amount,
+      entry.taxComponents,
+      !!entry.isInclusiveTax,
+    );
+  }
+  if (!entry.taxRateId) {
+    return [];
+  }
+  return [
+    {
+      taxRateId: entry.taxRateId,
+      rate: entry.taxRate,
+      amount: computeLineTaxAmount(
+        entry.amount,
+        entry.taxRate || 0,
+        !!entry.isInclusiveTax,
+      ),
+    },
+  ];
+};
+
 export class ItemEntry extends BaseModel {
   public referenceType: string;
   public referenceId: string;
@@ -187,27 +222,7 @@ export class ItemEntry extends BaseModel {
    * @returns {TaxComponentAmount[]}
    */
   get componentTaxes(): TaxComponentAmount[] {
-    if (this.taxComponents?.length) {
-      return computeLineComponentTaxes(
-        this.amount,
-        this.taxComponents,
-        !!this.isInclusiveTax,
-      );
-    }
-    if (!this.taxRateId) {
-      return [];
-    }
-    return [
-      {
-        taxRateId: this.taxRateId,
-        rate: this.taxRate,
-        amount: computeLineTaxAmount(
-          this.amount,
-          this.taxRate || 0,
-          !!this.isInclusiveTax,
-        ),
-      },
-    ];
+    return getEntryComponentTaxes(this);
   }
 
   /**

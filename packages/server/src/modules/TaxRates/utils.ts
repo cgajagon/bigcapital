@@ -4,6 +4,7 @@ import {
   TaxComponentAmount,
 } from '@bigcapital/utils';
 import type { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
+import { getEntryComponentTaxes } from '@/modules/TransactionItemEntry/models/ItemEntry';
 
 /**
  * Adds the difference between the document's stored tax and the sum of the
@@ -72,8 +73,11 @@ export const getDocumentLineComponentTaxes = (document: {
 
   return (document.entries ?? []).map((entry, index) => {
     const lineTax = lineTaxes[index];
-    // A plain object entry has no getter: it posts its line tax, as before.
-    const components = entry.componentTaxes ?? [];
+    // A serialized entry (`toJSON()`) has no getters, so a group line is split
+    // from its snapshot; any other plain object posts its line tax, as before.
+    const components =
+      entry.componentTaxes ??
+      (entry.taxComponents?.length ? getEntryComponentTaxes(entry) : []);
 
     if (components.length === 0) {
       return lineTax !== 0

@@ -1,3 +1,4 @@
+import { SaleInvoice } from '@/modules/SaleInvoices/models/SaleInvoice';
 import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
 import {
   allocateDocumentLineTaxes,
@@ -176,5 +177,45 @@ describe('getLineTaxesByTaxRateId', () => {
         taxAmountWithheld: 5.44,
       }),
     ).toEqual({ 1: 2.15, 2: 3.29 });
+  });
+});
+
+describe('getLineTaxesByTaxRateId on a serialized document', () => {
+  // The transformers receive `toJSON()` output, whose entries are plain objects
+  // without the model getters.
+  const TPS = { taxRateId: 1, rate: 5 };
+  const TVQ = { taxRateId: 2, rate: 9.975 };
+  const groupEntry = (rate: number) => ({
+    quantity: 1,
+    rate,
+    taxRateId: 9,
+    taxRate: 14.975,
+    taxComponents: [TPS, TVQ],
+  });
+  const serialized = (entries: object[], taxAmountWithheld: number) =>
+    SaleInvoice.fromJson({ entries, taxAmountWithheld } as any).toJSON() as any;
+
+  it('splits a group document per component', () => {
+    const invoice = serialized([groupEntry(37.5), groupEntry(-4.5)], 4.94);
+
+    expect(getLineTaxesByTaxRateId(invoice)).toEqual({ 1: 1.65, 2: 3.29 });
+  });
+
+  it('keys a mixed plain and group document by component', () => {
+    const invoice = serialized(
+      [{ quantity: 1, rate: 10, taxRateId: 1, taxRate: 5 }, groupEntry(37.5)],
+      6.12,
+    );
+
+    expect(getLineTaxesByTaxRateId(invoice)).toEqual({ 1: 2.38, 2: 3.74 });
+  });
+
+  it('keeps a plain-rate document as it was', () => {
+    const invoice = serialized(
+      [{ quantity: 1, rate: 100, taxRateId: 3, taxRate: 10 }],
+      10,
+    );
+
+    expect(getLineTaxesByTaxRateId(invoice)).toEqual({ 3: 10 });
   });
 });
