@@ -524,9 +524,7 @@ export class Bill extends TenantBaseModel {
           to: 'items_entries.referenceId',
         },
         filter(builder) {
-          builder
-            .where('reference_type', 'Bill')
-            .orderBy('tax_rate_transactions.id');
+          builder.where('reference_type', 'Bill');
           builder.orderBy('index', 'ASC');
         },
       },
@@ -566,7 +564,9 @@ export class Bill extends TenantBaseModel {
           to: 'tax_rate_transactions.referenceId',
         },
         filter(builder) {
-          builder.where('reference_type', 'Bill');
+          builder
+            .where('reference_type', 'Bill')
+            .orderBy('tax_rate_transactions.id');
         },
       },
 
