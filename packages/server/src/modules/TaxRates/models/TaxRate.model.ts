@@ -3,6 +3,7 @@
 // import SoftDeleteQueryBuilder from '@/collection/SoftDeleteQueryBuilder';
 // import TaxRateMeta from './TaxRate.settings';
 // import ModelSetting from './ModelSetting';
+import { Model } from 'objection';
 import { BaseModel } from '@/models/Model';
 import { ExportableModel } from '@/modules/Export/decorators/ExportableModel.decorator';
 
@@ -12,6 +13,8 @@ export class TaxRateModel extends BaseModel {
   code!: string;
   name!: string;
   rate!: number;
+  isGroup!: boolean;
+  payableAccountId!: number | null;
   description?: string;
 
   /**
@@ -60,6 +63,24 @@ export class TaxRateModel extends BaseModel {
    * Relationship mapping.
    */
   static get relationMappings() {
-    return {};
+    return {
+      /**
+       * The component rates of a tax group, in their saved order.
+       */
+      components: {
+        relation: Model.ManyToManyRelation,
+        modelClass: TaxRateModel,
+        join: {
+          from: 'tax_rates.id',
+          through: {
+            from: 'tax_rate_components.groupId',
+            to: 'tax_rate_components.componentId',
+            extra: ['index'],
+          },
+          to: 'tax_rates.id',
+        },
+        filter: (query) => query.orderBy('tax_rate_components.index'),
+      },
+    };
   }
 }

@@ -111,3 +111,77 @@ describe('ItemEntry.taxAmount', () => {
     );
   });
 });
+
+describe('ItemEntry with tax components', () => {
+  const taxComponents = [
+    { taxRateId: 1, rate: 5 },
+    { taxRateId: 2, rate: 9.975 },
+  ];
+
+  it('sums the rounded component taxes on an exclusive line', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: 37.5,
+      taxRate: 14.975,
+      taxComponents,
+    });
+
+    expect(entry.taxAmount).toBe(5.62);
+    expect(entry.componentTaxes.map((c) => c.amount)).toEqual([1.88, 3.74]);
+  });
+
+  it('rounds a negative line half away from zero', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: -4.5,
+      taxRate: 14.975,
+      taxComponents,
+    });
+
+    expect(entry.taxAmount).toBe(-0.68);
+  });
+
+  it('splits an inclusive line by its components', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: 114.975,
+      taxRate: 14.975,
+      isInclusiveTax: true,
+      taxComponents,
+    });
+
+    expect(entry.taxAmount).toBe(14.98);
+    expect(entry.subtotalExcludingTax).toBeCloseTo(99.995, 6);
+  });
+
+  it('reports a plain taxed line as a single component', () => {
+    const entry = ItemEntry.fromJson({
+      quantity: 1,
+      rate: 37.5,
+      taxRateId: 1,
+      taxRate: 5,
+    });
+
+    expect(entry.componentTaxes).toEqual([
+      { taxRateId: 1, rate: 5, amount: 1.88 },
+    ]);
+  });
+
+  it('has no component taxes without a rate', () => {
+    const entry = ItemEntry.fromJson({ quantity: 1, rate: 10 });
+
+    expect(entry.componentTaxes).toEqual([]);
+  });
+
+  it('parses taxComponents stored as a JSON string', () => {
+    const entry = ItemEntry.fromDatabaseJson({
+      quantity: 1,
+      rate: 37.5,
+      taxRate: 14.975,
+      taxComponents: JSON.stringify(taxComponents),
+    } as any);
+
+    expect(entry.taxComponents).toEqual(taxComponents);
+    expect(entry.taxAmount).toBe(5.62);
+  });
+});

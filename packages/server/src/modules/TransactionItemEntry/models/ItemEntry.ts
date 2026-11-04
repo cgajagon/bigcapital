@@ -1,7 +1,13 @@
 import { DiscountType } from '@/common/types/Discount';
 import { BaseModel } from '@/models/Model';
 import { Item } from '@/modules/Items/models/Item';
-import { computeLineTaxAmount } from '@bigcapital/utils';
+import {
+  computeLineComponentTaxes,
+  computeLineTaxAmount,
+  roundHalfAwayFromZero,
+  TaxComponentAmount,
+  TaxComponentRate,
+} from '@bigcapital/utils';
 import { Model } from 'objection';
 
 export class ItemEntry extends BaseModel {
@@ -31,6 +37,9 @@ export class ItemEntry extends BaseModel {
 
   public taxRateId: number;
 
+  /** Snapshot of the group's components taken when the line was saved. */
+  public taxComponents: TaxComponentRate[] | null;
+
   public warehouseId: number;
 
   item: Item;
@@ -41,6 +50,13 @@ export class ItemEntry extends BaseModel {
    */
   static get tableName() {
     return 'items_entries';
+  }
+
+  /**
+   * JSON columns.
+   */
+  static get jsonAttributes() {
+    return ['taxComponents'];
   }
 
   /**
@@ -152,12 +168,46 @@ export class ItemEntry extends BaseModel {
    * @returns {number}
    */
   get taxAmount() {
+    if (this.taxComponents?.length) {
+      return roundHalfAwayFromZero(
+        this.componentTaxes.reduce((sum, c) => sum + c.amount, 0),
+      );
+    }
     // Entries built from a DTO without a tax rate have no `taxRate` at all.
     return computeLineTaxAmount(
       this.amount,
       this.taxRate || 0,
       !!this.isInclusiveTax,
     );
+  }
+
+  /**
+   * The line's tax split by tax rate: one item per component of its tax group,
+   * a single item for a plain rate, none for an untaxed line.
+   * @returns {TaxComponentAmount[]}
+   */
+  get componentTaxes(): TaxComponentAmount[] {
+    if (this.taxComponents?.length) {
+      return computeLineComponentTaxes(
+        this.amount,
+        this.taxComponents,
+        !!this.isInclusiveTax,
+      );
+    }
+    if (!this.taxRateId) {
+      return [];
+    }
+    return [
+      {
+        taxRateId: this.taxRateId,
+        rate: this.taxRate,
+        amount: computeLineTaxAmount(
+          this.amount,
+          this.taxRate || 0,
+          !!this.isInclusiveTax,
+        ),
+      },
+    ];
   }
 
   /**

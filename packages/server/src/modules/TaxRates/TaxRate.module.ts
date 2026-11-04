@@ -20,12 +20,16 @@ import { WriteTaxTransactionsItemEntries } from './WriteTaxTransactionsItemEntri
 import { SyncItemTaxRateOnEditTaxRate } from './SyncItemTaxRateOnEditTaxRate';
 import { RegisterTenancyModel } from '../Tenancy/TenancyModels/Tenancy.module';
 import { TaxRateTransaction } from './models/TaxRateTransaction.model';
+import { TaxRateComponent } from './models/TaxRateComponent.model';
 import { TaxRatesExportable } from './TaxRatesExportable';
 import { TaxRatesImportable } from './TaxRatesImportable';
 import { FeaturesModule } from '../Features/Features.module';
 import { SalesTaxFeatureGuard } from './SalesTaxFeatureGuard';
 
-const models = [RegisterTenancyModel(TaxRateTransaction)];
+const models = [
+  RegisterTenancyModel(TaxRateTransaction),
+  RegisterTenancyModel(TaxRateComponent),
+];
 
 @Module({
   imports: [TenancyModule, FeaturesModule, ...models],
