@@ -16411,7 +16411,7 @@ export interface components {
             taxOnSalesAmount: components["schemas"]["FinancialReportTotalDto"];
             /** @description Tax on purchases */
             collectedTaxAmount: components["schemas"]["FinancialReportTotalDto"];
-            /** @description Tax amount collected */
+            /** @description Net tax: tax on sales minus tax on purchases (credit − debit on tax payable) */
             taxAmount: components["schemas"]["FinancialReportTotalDto"];
             /** @description Total sales (including tax) */
             totalSales: components["schemas"]["FinancialReportTotalDto"];

@@ -37,7 +37,8 @@ export class TaxRateSummaryDto {
   collectedTaxAmount: FinancialReportTotalDto;
 
   @ApiProperty({
-    description: 'Tax amount collected',
+    description:
+      'Net tax: tax on sales minus tax on purchases (credit − debit on tax payable)',
     type: FinancialReportTotalDto,
   })
   taxAmount: FinancialReportTotalDto;
