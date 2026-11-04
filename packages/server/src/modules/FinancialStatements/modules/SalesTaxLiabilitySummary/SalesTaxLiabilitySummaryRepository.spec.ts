@@ -37,9 +37,17 @@ describe('SalesTaxLiabilitySummaryRepository', () => {
     const accountsQuery = createQueryBuilder([
       { id: 1, accountType: 'tax-payable' },
     ]);
+    const salesPayableQuery = createQueryBuilder([
+      { taxRateId: 1, credit: 100, debit: 0 },
+    ]);
+    const purchasePayableQuery = createQueryBuilder([
+      { taxRateId: 1, credit: 0, debit: 40 },
+    ]);
     const transactionQueries = jest
       .fn()
       .mockReturnValueOnce(payableQuery)
+      .mockReturnValueOnce(salesPayableQuery)
+      .mockReturnValueOnce(purchasePayableQuery)
       .mockReturnValueOnce(salesQuery);
 
     const repository = new SalesTaxLiabilitySummaryRepository();
@@ -56,7 +64,13 @@ describe('SalesTaxLiabilitySummaryRepository', () => {
       resolve: jest.fn(async () => filter.basis),
     };
 
-    return { repository, payableQuery, salesQuery };
+    return {
+      repository,
+      payableQuery,
+      salesQuery,
+      salesPayableQuery,
+      purchasePayableQuery,
+    };
   };
 
   it('filters the taxes payable sum by the report date range', async () => {
@@ -96,5 +110,31 @@ describe('SalesTaxLiabilitySummaryRepository', () => {
       'filterByBasis',
       filter.basis,
     );
+  });
+
+  it('sums tax payable per document side', async () => {
+    const {
+      repository,
+      payableQuery,
+      salesPayableQuery,
+      purchasePayableQuery,
+    } = setup();
+
+    await repository.load(filter);
+
+    expect(salesPayableQuery.whereIn).toHaveBeenCalledWith('reference_type', [
+      'SaleInvoice',
+      'PaymentReceive',
+    ]);
+    expect(purchasePayableQuery.whereIn).toHaveBeenCalledWith(
+      'reference_type',
+      ['Bill', 'BillPayment'],
+    );
+    expect(payableQuery.whereIn).not.toHaveBeenCalledWith(
+      'reference_type',
+      expect.anything(),
+    );
+    expect(repository.salesTaxesPayableByTaxRateId[1].credit).toBe(100);
+    expect(repository.purchaseTaxesPayableByTaxRateId[1].debit).toBe(40);
   });
 });

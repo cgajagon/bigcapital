@@ -44332,6 +44332,22 @@
               }
             ]
           },
+          "taxOnSalesAmount": {
+            "description": "Tax on sales: sales documents' tax, net of reductions",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FinancialReportTotalDto"
+              }
+            ]
+          },
+          "collectedTaxAmount": {
+            "description": "Tax on purchases",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FinancialReportTotalDto"
+              }
+            ]
+          },
           "taxAmount": {
             "description": "Tax amount collected",
             "allOf": [
@@ -44354,6 +44370,8 @@
           "name",
           "rate",
           "taxableAmount",
+          "taxOnSalesAmount",
+          "collectedTaxAmount",
           "taxAmount",
           "totalSales"
         ]
@@ -44448,6 +44466,7 @@
               "taxName",
               "taxPercentage",
               "taxableAmount",
+              "taxOnSales",
               "collectedTax",
               "taxRate"
             ]

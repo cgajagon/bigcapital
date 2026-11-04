@@ -13,6 +13,10 @@ import { ModelObject } from 'objection';
 import { TenantModelProxy } from '@/modules/System/models/TenantBaseModel';
 import { AccountingBasis } from '@/common/types/AccountingBasis';
 import { AccountingBasisService } from '../../common/AccountingBasisService';
+import {
+  PURCHASE_TAX_REFERENCE_TYPES,
+  SALES_TAX_REFERENCE_TYPES,
+} from './constants';
 
 @Injectable({ scope: Scope.TRANSIENT })
 export class SalesTaxLiabilitySummaryRepository {
@@ -45,6 +49,18 @@ export class SalesTaxLiabilitySummaryRepository {
    * @param {SalesTaxLiabilitySummaryPayableById}
    */
   taxesPayableByTaxRateId: SalesTaxLiabilitySummaryPayableById;
+
+  /**
+   * Taxes payable of the sales documents (invoices and their payments).
+   * @param {SalesTaxLiabilitySummaryPayableById}
+   */
+  salesTaxesPayableByTaxRateId: SalesTaxLiabilitySummaryPayableById;
+
+  /**
+   * Taxes payable of the purchase documents (bills and their payments).
+   * @param {SalesTaxLiabilitySummaryPayableById}
+   */
+  purchaseTaxesPayableByTaxRateId: SalesTaxLiabilitySummaryPayableById;
 
   /**
    * @param {Array<ModelObject<TaxRateModel>>}
@@ -100,6 +116,12 @@ export class SalesTaxLiabilitySummaryRepository {
     const payableTaxes = await this.getTaxesPayableSumGroupedByRateId();
 
     this.taxesPayableByTaxRateId = payableTaxes;
+    this.salesTaxesPayableByTaxRateId =
+      await this.getTaxesPayableSumGroupedByRateId(SALES_TAX_REFERENCE_TYPES);
+    this.purchaseTaxesPayableByTaxRateId =
+      await this.getTaxesPayableSumGroupedByRateId(
+        PURCHASE_TAX_REFERENCE_TYPES,
+      );
   }
 
   /**
@@ -113,9 +135,12 @@ export class SalesTaxLiabilitySummaryRepository {
 
   /**
    * Retrieve taxes payable sum grouped by tax rate id.
+   * @param {string[]} referenceTypes - Limits the sum to these ledger reference types.
    * @returns {Promise<SalesTaxLiabilitySummaryPayableById>}
    */
-  public async getTaxesPayableSumGroupedByRateId(): Promise<SalesTaxLiabilitySummaryPayableById> {
+  public async getTaxesPayableSumGroupedByRateId(
+    referenceTypes?: string[],
+  ): Promise<SalesTaxLiabilitySummaryPayableById> {
     // Retrieves tax payable accounts.
     const taxPayableAccounts = await this.accountModel()
       .query()
@@ -123,10 +148,15 @@ export class SalesTaxLiabilitySummaryRepository {
 
     const payableAccountsIds = taxPayableAccounts.map((account) => account.id);
 
-    const groupedTaxesById = await this.accountTransactionModel()
+    const query = this.accountTransactionModel()
       .query()
       .whereIn('account_id', payableAccountsIds)
-      .whereNot('tax_rate_id', null)
+      .whereNot('tax_rate_id', null);
+
+    if (referenceTypes) {
+      query.whereIn('reference_type', referenceTypes);
+    }
+    const groupedTaxesById = await query
       .modify('filterDateRange', this.filter.fromDate, this.filter.toDate)
       .modify('filterByBasis', this.basis)
       .groupBy('tax_rate_id')

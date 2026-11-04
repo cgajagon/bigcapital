@@ -21,6 +21,7 @@ export interface SalesTaxLiabilitySummaryAmount {
 
 export interface SalesTaxLiabilitySummaryTotal {
   taxableAmount: SalesTaxLiabilitySummaryAmount;
+  taxOnSalesAmount: SalesTaxLiabilitySummaryAmount;
   taxAmount: SalesTaxLiabilitySummaryAmount;
   collectedTaxAmount: SalesTaxLiabilitySummaryAmount;
 }
@@ -31,6 +32,7 @@ export interface SalesTaxLiabilitySummaryRate {
   taxableAmount: SalesTaxLiabilitySummaryAmount;
   taxAmount: SalesTaxLiabilitySummaryAmount;
   taxPercentage: any;
+  taxOnSalesAmount: SalesTaxLiabilitySummaryAmount;
   collectedTaxAmount: SalesTaxLiabilitySummaryAmount;
 }
 

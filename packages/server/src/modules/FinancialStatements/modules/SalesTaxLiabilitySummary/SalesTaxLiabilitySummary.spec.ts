@@ -17,14 +17,20 @@ const query: SalesTaxLiabilitySummaryQuery = {
 const createSummary = ({
   payable = {},
   sales = {},
+  salesPayable = {},
+  purchasePayable = {},
 }: {
   payable?: SalesTaxLiabilitySummaryPayableById;
   sales?: SalesTaxLiabilitySummarySalesById;
+  salesPayable?: SalesTaxLiabilitySummaryPayableById;
+  purchasePayable?: SalesTaxLiabilitySummaryPayableById;
 }) => {
   const repository = {
     taxRates: [{ id: 1, name: 'Tax', rate: 10 }],
     taxesPayableByTaxRateId: payable,
     accountTransactionsByTaxRateId: sales,
+    salesTaxesPayableByTaxRateId: salesPayable,
+    purchaseTaxesPayableByTaxRateId: purchasePayable,
   } as unknown as SalesTaxLiabilitySummaryRepository;
 
   return new SalesTaxLiabilitySummary(query, repository, {
@@ -77,5 +83,23 @@ describe('SalesTaxLiabilitySummary', () => {
 
     expect(taxRate.taxPercentage.amount).toBe(0);
     expect(taxRate.taxPercentage.formattedAmount).not.toContain('NaN');
+  });
+
+  it('splits tax on sales and tax on purchases by document type', () => {
+    const summary = createSummary({
+      payable: { 1: { taxRateId: 1, credit: 10, debit: 5 } },
+      salesPayable: { 1: { taxRateId: 1, credit: 10, debit: 1 } },
+      purchasePayable: { 1: { taxRateId: 1, credit: 0, debit: 4 } },
+      sales: { 1: { taxRateId: 1, credit: 100, debit: 0 } },
+    });
+
+    const { taxRates, total } = summary.reportData();
+    const [taxRate] = taxRates;
+
+    expect(taxRate.taxableAmount.amount).toBe(100);
+    expect(taxRate.taxOnSalesAmount.amount).toBe(9);
+    expect(taxRate.collectedTaxAmount.amount).toBe(4);
+    expect(taxRate.taxAmount.amount).toBe(5);
+    expect(total.taxOnSalesAmount.amount).toBe(9);
   });
 });

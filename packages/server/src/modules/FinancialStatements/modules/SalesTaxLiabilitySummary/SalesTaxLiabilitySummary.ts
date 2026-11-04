@@ -53,6 +53,10 @@ export class SalesTaxLiabilitySummary extends FinancialSheet {
   ): SalesTaxLiabilitySummaryRate => {
     const payableTax = this.repository.taxesPayableByTaxRateId[taxRate.id];
     const salesTax = this.repository.accountTransactionsByTaxRateId[taxRate.id];
+    const salesPayable =
+      this.repository.salesTaxesPayableByTaxRateId[taxRate.id];
+    const purchasePayable =
+      this.repository.purchaseTaxesPayableByTaxRateId[taxRate.id];
 
     const payableTaxAmount = payableTax
       ? payableTax.credit - payableTax.debit
@@ -65,13 +69,20 @@ export class SalesTaxLiabilitySummary extends FinancialSheet {
       payableTaxAmount,
     );
 
-    // Calculates the payable tax amount.
-    const collectedTaxAmount = payableTax ? payableTax.debit : 0;
+    // Tax of the sales documents, net of reductions.
+    const taxOnSalesAmount = salesPayable
+      ? salesPayable.credit - salesPayable.debit
+      : 0;
+    // Tax of the purchase documents, net of reductions.
+    const collectedTaxAmount = purchasePayable
+      ? purchasePayable.debit - purchasePayable.credit
+      : 0;
 
     return {
       id: taxRate.id,
       taxName: `${taxRate.name} (${taxRate.rate}%)`,
       taxableAmount: this.getAmountMeta(salesTaxAmount),
+      taxOnSalesAmount: this.getAmountMeta(taxOnSalesAmount),
       taxAmount: this.getAmountMeta(payableTaxAmount),
       taxPercentage: this.getPercentageTotalAmountMeta(taxPercentage),
       collectedTaxAmount: this.getAmountMeta(collectedTaxAmount),
@@ -114,11 +125,13 @@ export class SalesTaxLiabilitySummary extends FinancialSheet {
     nodes: SalesTaxLiabilitySummaryRate[],
   ): SalesTaxLiabilitySummaryTotal => {
     const taxableAmount = sumBy(nodes, 'taxableAmount.amount');
+    const taxOnSalesAmount = sumBy(nodes, 'taxOnSalesAmount.amount');
     const taxAmount = sumBy(nodes, 'taxAmount.amount');
     const collectedTaxAmount = sumBy(nodes, 'collectedTaxAmount.amount');
 
     return {
       taxableAmount: this.getTotalAmountMeta(taxableAmount),
+      taxOnSalesAmount: this.getTotalAmountMeta(taxOnSalesAmount),
       taxAmount: this.getTotalAmountMeta(taxAmount),
       collectedTaxAmount: this.getTotalAmountMeta(collectedTaxAmount),
     };

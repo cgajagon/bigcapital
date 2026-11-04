@@ -16330,6 +16330,10 @@ export interface components {
             rate: number;
             /** @description Taxable amount */
             taxableAmount: components["schemas"]["FinancialReportTotalDto"];
+            /** @description Tax on sales: sales documents' tax, net of reductions */
+            taxOnSalesAmount: components["schemas"]["FinancialReportTotalDto"];
+            /** @description Tax on purchases */
+            collectedTaxAmount: components["schemas"]["FinancialReportTotalDto"];
             /** @description Tax amount collected */
             taxAmount: components["schemas"]["FinancialReportTotalDto"];
             /** @description Total sales (including tax) */
@@ -16366,7 +16370,7 @@ export interface components {
              * @description Column key
              * @enum {string}
              */
-            key: "taxName" | "taxPercentage" | "taxableAmount" | "collectedTax" | "taxRate";
+            key: "taxName" | "taxPercentage" | "taxableAmount" | "taxOnSales" | "collectedTax" | "taxRate";
             /** @description Column header label */
             label: string;
             /** @description Cell position index */

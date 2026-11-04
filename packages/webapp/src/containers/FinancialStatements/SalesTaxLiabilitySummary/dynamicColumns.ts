@@ -66,6 +66,7 @@ const dynamicColumnMatchers = (data: any[]): ColumnMatcher[] => [
   when(isColumnKey('taxableAmount'), taxableAmountAccessor(data)),
   when(isColumnKey('taxRate'), taxableAmountAccessor(data)),
   when(isColumnKey('taxPercentage'), taxableAmountAccessor(data)),
+  when(isColumnKey('taxOnSales'), taxableAmountAccessor(data)),
   when(isColumnKey('collectedTax'), taxableAmountAccessor(data)),
 ];
 

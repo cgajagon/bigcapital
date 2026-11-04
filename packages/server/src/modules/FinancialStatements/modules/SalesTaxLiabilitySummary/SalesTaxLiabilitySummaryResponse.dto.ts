@@ -25,6 +25,18 @@ export class TaxRateSummaryDto {
   taxableAmount: FinancialReportTotalDto;
 
   @ApiProperty({
+    description: "Tax on sales: sales documents' tax, net of reductions",
+    type: FinancialReportTotalDto,
+  })
+  taxOnSalesAmount: FinancialReportTotalDto;
+
+  @ApiProperty({
+    description: 'Tax on purchases',
+    type: FinancialReportTotalDto,
+  })
+  collectedTaxAmount: FinancialReportTotalDto;
+
+  @ApiProperty({
     description: 'Tax amount collected',
     type: FinancialReportTotalDto,
   })

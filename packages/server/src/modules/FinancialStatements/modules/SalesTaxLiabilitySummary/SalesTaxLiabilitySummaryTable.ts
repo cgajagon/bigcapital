@@ -59,6 +59,10 @@ export class SalesTaxLiabilitySummaryTable extends flow(
         accessor: 'taxableAmount.formattedAmount',
       },
       {
+        key: SALES_TAX_LIABILITY_COLUMN_KEYS.TAX_ON_SALES,
+        accessor: 'taxOnSalesAmount.formattedAmount',
+      },
+      {
         key: SALES_TAX_LIABILITY_COLUMN_KEYS.COLLECTED_TAX,
         accessor: 'collectedTaxAmount.formattedAmount',
       },
@@ -80,6 +84,10 @@ export class SalesTaxLiabilitySummaryTable extends flow(
       {
         key: SALES_TAX_LIABILITY_COLUMN_KEYS.TAXABLE_AMOUNT,
         accessor: 'taxableAmount.formattedAmount',
+      },
+      {
+        key: SALES_TAX_LIABILITY_COLUMN_KEYS.TAX_ON_SALES,
+        accessor: 'taxOnSalesAmount.formattedAmount',
       },
       {
         key: SALES_TAX_LIABILITY_COLUMN_KEYS.COLLECTED_TAX,
@@ -173,6 +181,10 @@ export class SalesTaxLiabilitySummaryTable extends flow(
       {
         label: this.i18n.t('sales_tax_liability_summary.taxable_amount'),
         key: SALES_TAX_LIABILITY_COLUMN_KEYS.TAXABLE_AMOUNT,
+      },
+      {
+        label: this.i18n.t('sales_tax_liability_summary.tax_on_sales'),
+        key: SALES_TAX_LIABILITY_COLUMN_KEYS.TAX_ON_SALES,
       },
       {
         label: this.i18n.t('sales_tax_liability_summary.collected_tax'),
