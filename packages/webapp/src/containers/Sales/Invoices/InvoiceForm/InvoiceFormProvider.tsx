@@ -2,7 +2,6 @@ import { isEmpty, pick } from 'lodash';
 import React, { createContext, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { transformToEditForm, ITEMS_FILTER_ROLES_QUERY } from './utils';
-import { getEntriesDocumentTaxRates } from '@/containers/Entries/utils';
 import type {
   SaleInvoice,
   CreateSaleInvoiceBody,
@@ -18,6 +17,7 @@ import type {
 } from '@bigcapital/sdk-ts';
 import type { SettingsGroup } from '@bigcapital/sdk-ts';
 import { Features } from '@/constants';
+import { getEntriesDocumentTaxRates } from '@/containers/Entries/utils';
 import {
   useInvoice,
   useItems,

@@ -12,6 +12,7 @@ import type {
 } from '@bigcapital/sdk-ts';
 import { DashboardInsider } from '@/components/Dashboard';
 import { Features } from '@/constants';
+import { getEntriesDocumentTaxRates } from '@/containers/Entries/utils';
 import {
   useAccounts,
   useVendors,
@@ -25,7 +26,6 @@ import {
 } from '@/hooks/query';
 import { useTaxRates } from '@/hooks/query/tax-rates';
 import { useFeatureCan } from '@/hooks/state';
-import { getEntriesDocumentTaxRates } from '@/containers/Entries/utils';
 
 type BillFormSubmitPayload = {
   redirect?: boolean;
