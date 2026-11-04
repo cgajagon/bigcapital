@@ -20,17 +20,25 @@ export class GetTaxRateService {
   ) {}
 
   /**
-   * Retrieves the given tax rate.
+   * Retrieves the given tax rate, with its components and whether it's used.
    * @param {number} taxRateId
    * @returns {Promise<ITaxRate>}
    */
   public async getTaxRate(taxRateId: number) {
-    const taxRate = await this.taxRateModel().query().findById(taxRateId);
+    const taxRate = await this.taxRateModel()
+      .query()
+      .findById(taxRateId)
+      .withGraphFetched('components');
 
     // Validates the tax rate existance.
     this.validators.validateTaxRateExistance(taxRate);
 
+    const inUse = await this.validators.getTaxRatesInUse([taxRate.id]);
+
     // Transforms the tax rate.
-    return this.transformer.transform(taxRate, new TaxRateTransformer());
+    return this.transformer.transform(
+      Object.assign(taxRate, { isUsed: inUse.has(taxRate.id) }),
+      new TaxRateTransformer(),
+    );
   }
 }

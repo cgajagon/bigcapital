@@ -44,6 +44,10 @@ export class DeleteTaxRateService {
       // the transaction so nothing can start using it before the delete.
       await this.validators.validateTaxRateNotInUse(taxRateId, trx);
 
+      // Validates no tax group has the rate as a component. Deleting a group
+      // itself unlinks its components (the links cascade).
+      await this.validators.validateTaxRateNotGroupComponent(taxRateId, trx);
+
       // Triggers `onTaxRateDeleting` event.
       await this.eventEmitter.emitAsync(events.taxRates.onDeleting, {
         oldTaxRate,

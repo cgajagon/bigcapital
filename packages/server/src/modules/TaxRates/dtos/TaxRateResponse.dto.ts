@@ -1,5 +1,31 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class TaxRateComponentResponseDto {
+  @ApiProperty({
+    description: 'The unique identifier of the component tax rate',
+    example: 1,
+  })
+  id: number;
+
+  @ApiProperty({
+    description: 'The name of the component tax rate',
+    example: 'TPS',
+  })
+  name: string;
+
+  @ApiProperty({
+    description: 'The code of the component tax rate',
+    example: 'TPS',
+  })
+  code: string;
+
+  @ApiProperty({
+    description: 'The current rate of the component tax rate',
+    example: 5,
+  })
+  rate: number;
+}
+
 export class TaxRateResponseDto {
   @ApiProperty({
     description: 'The unique identifier of the tax rate',
@@ -62,6 +88,37 @@ export class TaxRateResponseDto {
     example: true,
   })
   active: boolean;
+
+  @ApiProperty({
+    description:
+      "Whether the tax rate is a group of component rates; a group's rate is the sum of its components' rates",
+    example: false,
+  })
+  isGroup: boolean;
+
+  @ApiProperty({
+    description:
+      'The tax payable account the rate posts to; null posts to the default Tax Payable account',
+    example: null,
+    type: Number,
+    nullable: true,
+  })
+  payableAccountId: number | null;
+
+  @ApiProperty({
+    description:
+      'The component tax rates of a group, in order; empty for a plain rate',
+    type: [TaxRateComponentResponseDto],
+  })
+  components: TaxRateComponentResponseDto[];
+
+  @ApiProperty({
+    description:
+      "Whether a document line, tax transaction, ledger entry or item default uses the tax rate; a used group's components and a used rate's payable account can't change. Returned when retrieving tax rates.",
+    example: false,
+    required: false,
+  })
+  isUsed?: boolean;
 
   @ApiProperty({
     description: 'The date when the tax rate was created',

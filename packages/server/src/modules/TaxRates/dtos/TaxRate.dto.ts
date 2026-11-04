@@ -2,11 +2,14 @@ import { ToNumber } from '@/common/decorators/Validators';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
+  IsInt,
   IsNumber,
   IsNotEmpty,
   IsOptional,
   IsString,
+  ValidateIf,
 } from 'class-validator';
 
 export class CommandTaxRateDto {
@@ -27,14 +30,18 @@ export class CommandTaxRateDto {
   code: string;
 
   /**
-   * Tax rate percentage.
+   * Tax rate percentage. Required for a plain rate; a group's rate is the sum
+   * of its components' rates, so it's ignored for a group.
    */
+  @ValidateIf((dto) => !dto.isGroup)
   @IsNumber()
   @IsNotEmpty()
   @ToNumber()
   @ApiProperty({
-    description: 'The rate of the tax rate.',
+    description:
+      "The rate of the tax rate. Required for a plain rate; ignored for a group, whose rate is the sum of its components' rates.",
     example: 10,
+    required: false,
   })
   rate: number;
 
@@ -84,6 +91,50 @@ export class CommandTaxRateDto {
     example: false,
   })
   active?: boolean;
+
+  /**
+   * Whether the tax rate is a group of component rates. Set on creation only.
+   */
+  @IsBoolean()
+  @IsOptional()
+  @ApiProperty({
+    description:
+      'Whether the tax rate is a group of component rates. Set on creation; a rate never changes between plain and group.',
+    example: false,
+    required: false,
+  })
+  isGroup?: boolean;
+
+  /**
+   * The component rate ids of a group, in order.
+   */
+  @IsArray()
+  @IsInt({ each: true })
+  @IsOptional()
+  @ApiProperty({
+    description:
+      'The ids of the component tax rates of a group, in the order they are shown and posted. At least two distinct, active, non-group rates.',
+    example: [1, 2],
+    type: [Number],
+    required: false,
+  })
+  componentIds?: number[];
+
+  /**
+   * The tax payable account the rate posts to.
+   */
+  @IsInt()
+  @IsOptional()
+  @ToNumber()
+  @ApiProperty({
+    description:
+      'The tax payable account the rate posts to. Null posts to the default Tax Payable account.',
+    example: 1,
+    type: Number,
+    nullable: true,
+    required: false,
+  })
+  payableAccountId?: number | null;
 }
 
 export class CreateTaxRateDto extends CommandTaxRateDto {}

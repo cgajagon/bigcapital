@@ -7,7 +7,7 @@ export class TaxRateTransformer extends Transformer {
    * @returns {Array}
    */
   public includeAttributes = (): string[] => {
-    return ['nameFormatted', 'rateFormatted'];
+    return ['nameFormatted', 'rateFormatted', 'isUsed', 'components'];
   };
 
   /**
@@ -26,5 +26,30 @@ export class TaxRateTransformer extends Transformer {
    */
   protected nameFormatted = (taxRate: TaxRateModel): string => {
     return `${taxRate.name} [${taxRate.rate}%]`;
+  };
+
+  /**
+   * Whether the tax rate is used, as set by the query before transforming.
+   * @param taxRate
+   * @returns {boolean}
+   */
+  protected isUsed = (
+    taxRate: TaxRateModel & { isUsed?: boolean },
+  ): boolean => {
+    return Boolean(taxRate.isUsed);
+  };
+
+  /**
+   * A group's component rates, in order; empty for a plain rate.
+   * @param taxRate
+   * @returns {Array<{ id: number; name: string; code: string; rate: number }>}
+   */
+  protected components = (taxRate: TaxRateModel) => {
+    return (taxRate.components || []).map((component) => ({
+      id: component.id,
+      name: component.name,
+      code: component.code,
+      rate: component.rate,
+    }));
   };
 }

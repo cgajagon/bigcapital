@@ -16,6 +16,7 @@ import { WriteInvoiceTaxTransactionsSubscriber } from './subscribers/WriteInvoic
 import { BillTaxRateValidateSubscriber } from './subscribers/BillTaxRateValidateSubscriber';
 import { SaleInvoiceTaxRateValidateSubscriber } from './subscribers/SaleInvoiceTaxRateValidateSubscriber';
 import { SyncItemTaxRateOnEditTaxSubscriber } from './subscribers/SyncItemTaxRateOnEditTaxSubscriber';
+import { SyncTaxGroupRatesSubscriber } from './subscribers/SyncTaxGroupRates.subscriber';
 import { WriteTaxTransactionsItemEntries } from './WriteTaxTransactionsItemEntries';
 import { SyncItemTaxRateOnEditTaxRate } from './SyncItemTaxRateOnEditTaxRate';
 import { RegisterTenancyModel } from '../Tenancy/TenancyModels/Tenancy.module';
@@ -50,6 +51,7 @@ const models = [
     BillTaxRateValidateSubscriber,
     SaleInvoiceTaxRateValidateSubscriber,
     SyncItemTaxRateOnEditTaxSubscriber,
+    SyncTaxGroupRatesSubscriber,
     WriteTaxTransactionsItemEntries,
     SyncItemTaxRateOnEditTaxRate,
     TaxRatesExportable,

@@ -221,7 +221,7 @@ export const createServiceItem = async () => {
   return parseInt(res.body.id, 10);
 };
 
-export const createTaxRate = async (rate: number) => {
+export const createTaxRate = async (rate: number, extra: object = {}) => {
   const res = await request(app.getHttpServer())
     .post('/tax-rates')
     .set(authHeaders())
@@ -230,8 +230,51 @@ export const createTaxRate = async (rate: number) => {
       rate,
       code: faker.string.uuid(),
       active: true,
+      ...extra,
     })
     .expect(201);
 
   return res.body.id;
 };
+
+/**
+ * Creates a tax group of the given component rates, in that order.
+ */
+export const createTaxGroup = async (
+  componentIds: number[],
+  extra: object = {},
+) => {
+  const res = await request(app.getHttpServer())
+    .post('/tax-rates')
+    .set(authHeaders())
+    .send({
+      name: `GL Tax Group ${faker.string.alphanumeric({ length: 6 })}`,
+      code: faker.string.uuid(),
+      isGroup: true,
+      componentIds,
+      active: true,
+      ...extra,
+    })
+    .expect(201);
+
+  return res.body.id;
+};
+
+/**
+ * Creates an account of the given type, with a unique name and code.
+ */
+export const createAccount = async (accountType: string) => {
+  const res = await request(app.getHttpServer())
+    .post('/accounts')
+    .set(authHeaders())
+    .send({
+      name: `GL ${accountType} ${Date.now()}-${faker.string.alphanumeric({ length: 6 })}`,
+      accountType,
+      code: faker.string.alphanumeric({ length: 6 }).toUpperCase(),
+    })
+    .expect(201);
+
+  return res.body.id;
+};
+
+export const createTaxPayableAccount = () => createAccount('tax-payable');

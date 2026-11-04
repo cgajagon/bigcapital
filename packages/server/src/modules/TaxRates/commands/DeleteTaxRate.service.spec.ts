@@ -1,13 +1,16 @@
 import { DeleteTaxRateService } from './DeleteTaxRate.service';
 
 describe('DeleteTaxRateService', () => {
-  it('checks whether the rate is in use inside the delete transaction', async () => {
+  it('checks whether the rate is in use or a group component inside the delete transaction', async () => {
     const trx = { id: 'trx' };
     const calls: string[] = [];
     const validators = {
       validateTaxRateExistance: jest.fn(),
       validateTaxRateNotInUse: jest.fn(async () => {
         calls.push('in-use check');
+      }),
+      validateTaxRateNotGroupComponent: jest.fn(async () => {
+        calls.push('group component check');
       }),
     };
     const uow = {
@@ -35,6 +38,15 @@ describe('DeleteTaxRateService', () => {
     await service.deleteTaxRate(5);
 
     expect(validators.validateTaxRateNotInUse).toHaveBeenCalledWith(5, trx);
-    expect(calls).toEqual(['transaction start', 'in-use check', 'delete']);
+    expect(validators.validateTaxRateNotGroupComponent).toHaveBeenCalledWith(
+      5,
+      trx,
+    );
+    expect(calls).toEqual([
+      'transaction start',
+      'in-use check',
+      'group component check',
+      'delete',
+    ]);
   });
 });

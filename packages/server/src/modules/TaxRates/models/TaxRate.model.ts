@@ -18,6 +18,11 @@ export class TaxRateModel extends BaseModel {
   description?: string;
 
   /**
+   * A group's component rates, in order, when the relation is loaded.
+   */
+  components?: TaxRateModel[];
+
+  /**
    * Table name
    */
   static get tableName() {
