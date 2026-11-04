@@ -7,7 +7,13 @@ export class TaxRateTransformer extends Transformer {
    * @returns {Array}
    */
   public includeAttributes = (): string[] => {
-    return ['nameFormatted', 'rateFormatted', 'isUsed', 'components'];
+    return [
+      'nameFormatted',
+      'rateFormatted',
+      'isGroup',
+      'isUsed',
+      'components',
+    ];
   };
 
   /**
@@ -26,6 +32,16 @@ export class TaxRateTransformer extends Transformer {
    */
   protected nameFormatted = (taxRate: TaxRateModel): string => {
     return `${taxRate.name} [${taxRate.rate}%]`;
+  };
+
+  /**
+   * Whether the tax rate is a group, as a boolean (the column reads back as
+   * 0/1).
+   * @param taxRate
+   * @returns {boolean}
+   */
+  protected isGroup = (taxRate: TaxRateModel): boolean => {
+    return Boolean(taxRate.isGroup);
   };
 
   /**

@@ -114,11 +114,10 @@ export class TaxRateResponseDto {
 
   @ApiProperty({
     description:
-      "Whether a document line, tax transaction, ledger entry or item default uses the tax rate; a used group's components and a used rate's payable account can't change. Returned when retrieving tax rates.",
+      "Whether a document line, tax transaction, ledger entry or item default uses the tax rate; a used group's components and a used rate's payable account can't change",
     example: false,
-    required: false,
   })
-  isUsed?: boolean;
+  isUsed: boolean;
 
   @ApiProperty({
     description: 'The date when the tax rate was created',

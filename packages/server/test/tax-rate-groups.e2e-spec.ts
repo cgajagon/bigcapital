@@ -114,16 +114,14 @@ describe('Tax rate groups (e2e)', () => {
         201,
       );
 
-      expect(Number(res.body.rate)).toBe(14.975);
-      expect(Boolean(res.body.is_group)).toBe(true);
-      expect(componentIdsOf(res.body)).toEqual([tps, tvq]);
-
-      const group = await getTaxRate(res.body.id);
-
-      expect(group.rate).toBe(14.975);
-      expect(Boolean(group.is_group)).toBe(true);
-      expect(group.name_formatted.endsWith('[14.975%]')).toBe(true);
-      expect(group.components).toEqual([
+      // The create response has the get endpoint's shape.
+      expect(res.body.rate).toBe(14.975);
+      expect(res.body.is_group).toBe(true);
+      expect(res.body.is_used).toBe(false);
+      expect(res.body.payable_account_id).toBeNull();
+      expect(res.body.name_formatted.endsWith('[14.975%]')).toBe(true);
+      expect(res.body.rate_formatted).toBe('14.975%');
+      expect(res.body.components).toEqual([
         {
           id: tps,
           name: expect.stringMatching(/^TPS /),
@@ -137,13 +135,21 @@ describe('Tax rate groups (e2e)', () => {
           rate: 9.975,
         },
       ]);
+
+      const group = await getTaxRate(res.body.id);
+
+      expect(group.is_group).toBe(true);
+      expect(group).toEqual(res.body);
     });
 
     it('creates a rate with a tax payable account', async () => {
       const accountId = await createTaxPayableAccount();
       const tps = await createTaxRate(5, { payableAccountId: accountId });
 
-      expect((await getTaxRate(tps)).payable_account_id).toBe(accountId);
+      const created = await getTaxRate(tps);
+
+      expect(created.payable_account_id).toBe(accountId);
+      expect(created.is_group).toBe(false);
 
       // An edit that omits the payable account keeps it.
       await editTaxRate(tps, plainBody(5)).expect(200);
@@ -218,9 +224,25 @@ describe('Tax rate groups (e2e)', () => {
 
       const res = await editTaxRate(groupId, groupBody([tvq, tps])).expect(200);
 
-      expect(componentIdsOf(res.body)).toEqual([tvq, tps]);
-      expect(componentIdsOf(await getTaxRate(groupId))).toEqual([tvq, tps]);
-      expect((await getTaxRate(groupId)).rate).toBe(14.975);
+      // The edit response has the get endpoint's shape.
+      expect(res.body.rate).toBe(14.975);
+      expect(res.body.is_group).toBe(true);
+      expect(res.body.is_used).toBe(false);
+      expect(res.body.components).toEqual([
+        {
+          id: tvq,
+          name: expect.stringMatching(/^TVQ /),
+          code: expect.any(String),
+          rate: 9.975,
+        },
+        {
+          id: tps,
+          name: expect.stringMatching(/^TPS /),
+          code: expect.any(String),
+          rate: 5,
+        },
+      ]);
+      expect(await getTaxRate(groupId)).toEqual(res.body);
     });
 
     it("recomputes a group's rate when a component's rate changes", async () => {

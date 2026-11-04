@@ -100,10 +100,7 @@ export class EditTaxRateService {
         trx,
       } as ITaxRateEditedPayload);
 
-      return this.taxRateModel()
-        .query(trx)
-        .findById(taxRateId)
-        .withGraphFetched('components');
+      return taxRate;
     });
   }
 

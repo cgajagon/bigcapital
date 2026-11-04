@@ -21,23 +21,29 @@ export class TaxRatesApplication {
   ) {}
 
   /**
-   * Creates a new tax rate.
-   * @param {ICreateTaxRateDTO} createTaxRateDTO
+   * Creates a new tax rate, and retrieves it as the get endpoint returns it.
+   * @param {CreateTaxRateDto} createTaxRateDTO
    * @returns {Promise<ITaxRate>}
    */
-  public createTaxRate(createTaxRateDTO: CreateTaxRateDto) {
-    return this.createTaxRateService.createTaxRate(createTaxRateDTO);
+  public async createTaxRate(createTaxRateDTO: CreateTaxRateDto) {
+    const taxRate =
+      await this.createTaxRateService.createTaxRate(createTaxRateDTO);
+
+    return this.getTaxRateService.getTaxRate(taxRate.id);
   }
 
   /**
-   * Edits the given tax rate.
-   * @param {number} tenantId
+   * Edits the given tax rate, and retrieves it as the get endpoint returns it.
    * @param {number} taxRateId
-   * @param {IEditTaxRateDTO} taxRateEditDTO
+   * @param {EditTaxRateDto} editTaxRateDTO
    * @returns {Promise<ITaxRate>}
    */
-  public editTaxRate(taxRateId: number, editTaxRateDTO: EditTaxRateDto) {
-    return this.editTaxRateService.editTaxRate(taxRateId, editTaxRateDTO);
+  public async editTaxRate(taxRateId: number, editTaxRateDTO: EditTaxRateDto) {
+    const taxRate = await this.editTaxRateService.editTaxRate(
+      taxRateId,
+      editTaxRateDTO,
+    );
+    return this.getTaxRateService.getTaxRate(taxRate.id);
   }
 
   /**
