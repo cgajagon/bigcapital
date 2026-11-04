@@ -1,3 +1,4 @@
+import { getLineTaxesByTaxRateId } from '@/modules/TaxRates/utils';
 import { SaleInvoiceTaxEntryTransformer } from './SaleInvoiceTaxEntry.transformer';
 import { SaleInvoiceTransformer } from './SaleInvoice.transformer';
 import { contactAddressTextFormat } from '@/utils/address-text-format';
@@ -100,8 +101,7 @@ export class GetInvoicePaymentLinkMetaTransformer extends SaleInvoiceTransformer
       invoice.taxes,
       new GetInvoicePaymentLinkTaxEntryTransformer(),
       {
-        subtotal: invoice.subtotal,
-        isInclusiveTax: invoice.isInclusiveTax,
+        lineTaxesByTaxRateId: getLineTaxesByTaxRateId(invoice),
         currencyCode: invoice.currencyCode,
       },
     );

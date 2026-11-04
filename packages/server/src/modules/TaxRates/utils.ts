@@ -2,26 +2,6 @@ import { roundHalfAwayFromZero } from '@bigcapital/utils';
 import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
 
 /**
- * Get inclusive tax amount.
- * @param {number} amount
- * @param {number} taxRate
- * @returns {number}
- */
-export const getInclusiveTaxAmount = (amount: number, taxRate: number) => {
-  return (amount * taxRate) / (100 + taxRate);
-};
-
-/**
- * Get exclusive tax amount.
- * @param {number} amount
- * @param {number} taxRate
- * @returns {number}
- */
-export const getExlusiveTaxAmount = (amount: number, taxRate: number) => {
-  return (amount * taxRate) / 100;
-};
-
-/**
  * Adds the difference between the document's stored tax and the sum of the
  * line taxes to the line with the largest absolute non-zero tax (the first
  * one on a tie), so the line taxes add up to the stored document tax exactly.
@@ -69,3 +49,25 @@ export const getDocumentLineTaxes = (document: {
     (document.entries ?? []).map((entry) => entry.taxAmount),
     document.taxAmountWithheld,
   );
+
+/**
+ * Sums the allocated line taxes of a document per tax rate, rounded to cents.
+ * @param document
+ * @returns {Record<number, number>}
+ */
+export const getLineTaxesByTaxRateId = (document: {
+  entries?: ItemEntry[];
+  taxAmountWithheld?: number | null;
+}): Record<number, number> => {
+  const lineTaxes = getDocumentLineTaxes(document);
+  const totals: Record<number, number> = {};
+
+  (document.entries ?? []).forEach((entry, index) => {
+    if (!entry.taxRateId) return;
+    totals[entry.taxRateId] = (totals[entry.taxRateId] ?? 0) + lineTaxes[index];
+  });
+  Object.keys(totals).forEach((id) => {
+    totals[id] = roundHalfAwayFromZero(totals[id]);
+  });
+  return totals;
+};

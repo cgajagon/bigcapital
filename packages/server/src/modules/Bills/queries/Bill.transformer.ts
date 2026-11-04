@@ -1,3 +1,4 @@
+import { getLineTaxesByTaxRateId } from '@/modules/TaxRates/utils';
 import { Transformer } from '@/modules/Transformer/Transformer';
 import { Bill } from '../models/Bill';
 import { ItemEntryTransformer } from '@/modules/TransactionItemEntry/ItemEntry.transformer';
@@ -226,8 +227,7 @@ export class BillTransformer extends Transformer {
    */
   protected taxes = (bill: Bill) => {
     return this.item(bill.taxes, new SaleInvoiceTaxEntryTransformer(), {
-      subtotal: bill.subtotal,
-      isInclusiveTax: bill.isInclusiveTax,
+      lineTaxesByTaxRateId: getLineTaxesByTaxRateId(bill),
       currencyCode: bill.currencyCode,
     });
   };

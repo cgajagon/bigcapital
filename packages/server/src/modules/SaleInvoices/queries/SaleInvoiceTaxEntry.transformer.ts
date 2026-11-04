@@ -1,8 +1,4 @@
 import { Transformer } from '@/modules/Transformer/Transformer';
-import {
-  getExlusiveTaxAmount,
-  getInclusiveTaxAmount,
-} from '../../TaxRates/utils';
 
 export class SaleInvoiceTaxEntryTransformer extends Transformer {
   /**
@@ -39,12 +35,12 @@ export class SaleInvoiceTaxEntryTransformer extends Transformer {
   };
 
   /**
-   * Retrieve tax rate id.
+   * Retrieve the tax percentage stored on the document.
    * @param taxEntry
    * @returns {number}
    */
   protected taxRate = (taxEntry) => {
-    return taxEntry.taxAmount || taxEntry.taxRate.rate;
+    return taxEntry.rate;
   };
 
   /**
@@ -57,15 +53,11 @@ export class SaleInvoiceTaxEntryTransformer extends Transformer {
   };
 
   /**
-   * Retrieve tax rate amount.
+   * Retrieve the sum of the document's rounded line taxes of this tax.
    * @param taxEntry
    */
   protected taxRateAmount = (taxEntry) => {
-    const taxRate = this.taxRate(taxEntry);
-
-    return this.options.isInclusiveTax
-      ? getInclusiveTaxAmount(this.options.subtotal, taxRate)
-      : getExlusiveTaxAmount(this.options.subtotal, taxRate);
+    return this.options.lineTaxesByTaxRateId[taxEntry.taxRateId] ?? 0;
   };
 
   /**
