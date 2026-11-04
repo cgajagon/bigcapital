@@ -247,7 +247,8 @@ export const composeRowsOnEditCell = (
  * Compose table rows when insert a new row to table rows.
  */
 export const useComposeRowsOnNewRow = () => {
-  const { taxRates, isInclusiveTax } = useItemEntriesTableContext();
+  const { taxRates, documentTaxRates, isInclusiveTax } =
+    useItemEntriesTableContext();
 
   return React.useMemo(() => {
     return (
@@ -260,27 +261,61 @@ export const useComposeRowsOnNewRow = () => {
         updateTableRow(rowIndex, newRow),
         updateItemsEntriesTotal,
         orderingLinesIndexes,
-        assignEntriesTaxRate(taxRates),
+        assignEntriesTaxRate(taxRates, documentTaxRates),
         assignEntriesTaxAmount(isInclusiveTax),
       ) as ItemEntry[];
     };
-  }, [isInclusiveTax, taxRates]);
+  }, [isInclusiveTax, taxRates, documentTaxRates]);
 };
 
 /**
- * Associate tax rate to entries.
+ * Retrieves the percentage a saved document stored for each tax it uses,
+ * keyed by tax rate id. A stored 0 is kept; lines without one are skipped.
+ * @param entries - The saved document's entries.
+ * @returns {Record<string, number>}
+ */
+export const getEntriesDocumentTaxRates = (
+  entries?: Array<{
+    taxRateId?: number | string | null;
+    taxRate?: number | string | null;
+  }>,
+): Record<string, number> => {
+  const documentTaxRates: Record<string, number> = {};
+
+  (entries || []).forEach((entry) => {
+    const key = String(entry.taxRateId ?? '');
+
+    if (
+      key &&
+      entry.taxRate !== null &&
+      entry.taxRate !== undefined &&
+      !(key in documentTaxRates)
+    ) {
+      documentTaxRates[key] = Number(entry.taxRate);
+    }
+  });
+  return documentTaxRates;
+};
+
+/**
+ * Associate tax rate to entries. Taxes the saved document already uses keep
+ * the document's percentage, like the server does when it saves.
+ * @param {TaxRate[]} taxRates - The current tax rates.
+ * @param {Record<string, number>} documentTaxRates - The saved document's percentages.
  */
 export const assignEntriesTaxRate =
-  (taxRates?: TaxRate[]) =>
+  (taxRates?: TaxRate[], documentTaxRates: Record<string, number> = {}) =>
   (entries: Array<{ taxRateId?: string | number }>) => {
     const taxRatesById = keyBy(taxRates, 'id');
 
     return entries.map((entry) => {
+      const documentTaxRate = documentTaxRates[entry.taxRateId as string];
       const taxRate = taxRatesById[entry.taxRateId as string];
 
       return {
         ...entry,
-        taxRate: taxRate?.rate || 0,
+        taxRate:
+          documentTaxRate !== undefined ? documentTaxRate : taxRate?.rate || 0,
       };
     });
   };
@@ -348,8 +383,13 @@ export const getExlusiveTaxAmount = (amount: number, taxRate: number) => {
  * @returns {Function}
  */
 export const useComposeRowsOnEditTableCell = () => {
-  const { taxRates, isInclusiveTax, localValue, defaultEntry } =
-    useItemEntriesTableContext();
+  const {
+    taxRates,
+    documentTaxRates,
+    isInclusiveTax,
+    localValue,
+    defaultEntry,
+  } = useItemEntriesTableContext();
 
   return useCallback(
     (rowIndex: number, columnId: string, value: unknown): ItemEntry[] => {
@@ -359,11 +399,11 @@ export const useComposeRowsOnEditTableCell = () => {
         updateItemsEntriesTotal,
         updateAutoAddNewLine(defaultEntry, ['itemId']),
         orderingLinesIndexes,
-        assignEntriesTaxRate(taxRates),
+        assignEntriesTaxRate(taxRates, documentTaxRates),
         assignEntriesTaxAmount(isInclusiveTax),
       ) as ItemEntry[];
     },
-    [taxRates, isInclusiveTax, localValue, defaultEntry],
+    [taxRates, documentTaxRates, isInclusiveTax, localValue, defaultEntry],
   );
 };
 
@@ -404,7 +444,7 @@ export interface AggregatedItemEntryTaxRate {
 export const aggregateItemEntriesTaxRates =
   (currencyCode: string, taxRates?: TaxRate[]) =>
   (
-    entries: Array<{ taxRateId?: string | number }>,
+    entries: Array<{ taxRateId?: string | number; taxRate?: string | number }>,
   ): AggregatedItemEntryTaxRate[] => {
     const taxRatesById = keyBy(taxRates, 'id');
 
@@ -418,10 +458,19 @@ export const aggregateItemEntriesTaxRates =
       const totalTaxAmount = sumBy(groupedEntries, 'taxAmount');
       const taxAmountFormatted = formattedAmount(totalTaxAmount, currencyCode);
 
+      // The lines' own percentage, which a saved document keeps.
+      const entryTaxRate = groupedEntries[0]?.taxRate;
+      const rate =
+        entryTaxRate !== undefined &&
+        entryTaxRate !== null &&
+        entryTaxRate !== ''
+          ? Number(entryTaxRate)
+          : taxRate.rate;
+
       return {
         taxRateId,
-        taxRate: taxRate.rate,
-        label: `${taxRate.name} [${taxRate.rate}%]`,
+        taxRate: rate,
+        label: `${taxRate.name} [${rate}%]`,
         taxAmount: totalTaxAmount,
         taxAmountFormatted,
       };

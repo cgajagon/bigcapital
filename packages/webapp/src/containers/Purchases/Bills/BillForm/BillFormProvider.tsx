@@ -25,6 +25,7 @@ import {
 } from '@/hooks/query';
 import { useTaxRates } from '@/hooks/query/tax-rates';
 import { useFeatureCan } from '@/hooks/state';
+import { getEntriesDocumentTaxRates } from '@/containers/Entries/utils';
 
 type BillFormSubmitPayload = {
   redirect?: boolean;
@@ -39,6 +40,7 @@ type BillFormContextValue = {
   warehouses: WarehousesListResponse;
   branches: BranchesListResponse;
   taxRates: TaxRatesListResponse | undefined;
+  documentTaxRates: Record<string, number>;
   submitPayload: BillFormSubmitPayload;
   isNewMode: boolean;
 
@@ -143,6 +145,12 @@ function BillFormProvider({ billId, ...props }: BillFormProviderProps) {
 
   const isNewMode = !billId;
 
+  // The saved bill keeps its percentage for each tax it uses.
+  const documentTaxRates = React.useMemo(
+    () => (isNewMode ? {} : getEntriesDocumentTaxRates(bill?.entries)),
+    [isNewMode, bill],
+  );
+
   // Determines whether the warehouse and branches are loading.
   const isFeatureLoading =
     isWarehousesLoading || isBranchesLoading || isTaxRatesLoading;
@@ -155,6 +163,7 @@ function BillFormProvider({ billId, ...props }: BillFormProviderProps) {
     warehouses: warehouses ?? [],
     branches: branches ?? [],
     taxRates: taxRates ?? [],
+    documentTaxRates,
     submitPayload,
     isNewMode,
 

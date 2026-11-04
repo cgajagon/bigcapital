@@ -24,6 +24,7 @@ interface ItemsEntriesTableProps {
   value?: ItemEntry[];
   onChange?: (entries: ItemEntry[]) => void;
   taxRates?: TaxRate[];
+  documentTaxRates?: Record<string, number>;
   minLinesNumber?: number;
   enableTaxRates?: boolean;
   items?: Item[];

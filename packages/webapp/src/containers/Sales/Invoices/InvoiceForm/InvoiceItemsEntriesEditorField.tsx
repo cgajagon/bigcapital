@@ -13,7 +13,7 @@ import { TaxType } from '@/interfaces/TaxRates';
  * Invoice items entries editor field.
  */
 export function InvoiceItemsEntriesEditorField() {
-  const { items, taxRates } = useInvoiceFormContext();
+  const { items, taxRates, documentTaxRates } = useInvoiceFormContext();
 
   return (
     <FastField
@@ -34,6 +34,7 @@ export function InvoiceItemsEntriesEditorField() {
           }}
           items={items}
           taxRates={taxRates}
+          documentTaxRates={documentTaxRates}
           itemType={ITEM_TYPE.SELLABLE}
           errors={error}
           linesNumber={4}

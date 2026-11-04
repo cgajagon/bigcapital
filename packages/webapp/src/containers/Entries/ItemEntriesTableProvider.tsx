@@ -19,6 +19,8 @@ export interface ItemEntriesTableContextValue {
   defaultEntry?: ItemEntry;
   /* The tax rates list. */
   taxRates?: TaxRate[];
+  /* The saved document's percentage per tax rate id, kept on edit. */
+  documentTaxRates?: Record<string, number>;
 
   /* The minimum number of the table lines. */
   minLinesNumber?: number;
