@@ -5,6 +5,7 @@ import { useItemEntriesTableContext } from './ItemEntriesTableProvider';
 import type { ItemEntry } from '@/interfaces/ItemEntries';
 import type { TaxRate } from '@bigcapital/sdk-ts';
 import { useItem } from '@/hooks/query';
+import { isActiveTaxRate } from '@/components/TaxRates/utils';
 import {
   toSafeNumber,
   saveInvoke,
@@ -112,7 +113,7 @@ interface FetchedItemRow {
   rate: number | undefined;
   description: string | undefined;
   quantity: number;
-  taxRateId: number | undefined;
+  taxRateId: number | null | undefined;
   landedCost?: boolean;
   landedCostDisabled?: boolean;
 }
@@ -128,6 +129,7 @@ type CellLoadingCoords = Array<[number, string]>;
 interface UseFetchItemRowProps {
   landedCost?: boolean;
   itemType?: string;
+  taxRates?: TaxRate[];
   notifyNewRow: (newRow: FetchedItemRow, rowIndex: number) => void;
 }
 
@@ -137,6 +139,7 @@ interface UseFetchItemRowProps {
 export function useFetchItemRow({
   landedCost,
   itemType,
+  taxRates,
   notifyNewRow,
 }: UseFetchItemRowProps) {
   const [itemRow, setItemRow] = React.useState<ItemRowMeta | null>(null);
@@ -181,10 +184,15 @@ export function useFetchItemRow({
       // Detarmines whether the landed cost checkbox should be disabled.
       const landedCostDisabled = isLandedCostDisabled(item);
 
-      const taxRateId =
+      const defaultTaxRateId =
         itemType === ITEM_TYPE.PURCHASABLE
           ? item.purchaseTaxRateId
           : item.sellTaxRateId;
+
+      // An inactive default tax rate isn't applied to new lines.
+      const taxRateId = isActiveTaxRate(taxRates, defaultTaxRateId)
+        ? defaultTaxRateId
+        : null;
 
       // The new row.
       const newRow = {
@@ -202,7 +210,15 @@ export function useFetchItemRow({
       setItemRow(null);
       saveInvoke(notifyNewRow, newRow, rowIndex);
     }
-  }, [item, itemRow, itemType, isItemSuccess, landedCost, notifyNewRow]);
+  }, [
+    item,
+    itemRow,
+    itemType,
+    isItemSuccess,
+    landedCost,
+    notifyNewRow,
+    taxRates,
+  ]);
 
   return {
     isItemFetching,

@@ -1,8 +1,9 @@
 // @ts-nocheck
 import { Button, FormGroup, Intent } from '@blueprintjs/core';
 import { Suggest } from '@blueprintjs-formik/select';
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import intl from 'react-intl-universal';
+import { getSelectableTaxRates } from './utils';
 import { CellType } from '@/constants';
 
 export function TaxRatesSuggestInputCell({
@@ -12,6 +13,12 @@ export function TaxRatesSuggestInputCell({
   payload: { errors, updateData, taxRates },
 }) {
   const error = errors?.[index]?.[id];
+
+  // Inactive tax rates aren't offered, except the one the line already has.
+  const selectableTaxRates = useMemo(
+    () => getSelectableTaxRates(taxRates, [cellValue]),
+    [taxRates, cellValue],
+  );
 
   // Handle the item selected.
   const handleItemSelected = useCallback(
@@ -40,7 +47,7 @@ export function TaxRatesSuggestInputCell({
     <FormGroup intent={error ? Intent.DANGER : null} {...formGroupProps}>
       <Suggest<any>
         selectedValue={cellValue}
-        items={taxRates}
+        items={selectableTaxRates}
         valueAccessor={'id'}
         labelAccessor={'code'}
         textAccessor={'nameFormatted'}

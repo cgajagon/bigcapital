@@ -23,6 +23,7 @@ import {
 } from '@/components';
 import { FormattedMessage as T } from '@/components';
 import { TaxRatesSelect } from '@/components/TaxRates/TaxRatesSelect';
+import { getSelectableTaxRates } from '@/components/TaxRates/utils';
 import { Features } from '@/constants';
 import { ACCOUNT_PARENT_TYPE } from '@/constants/accountTypes';
 import { useCurrentOrganizationBaseCurrency } from '@/hooks/query';
@@ -30,7 +31,13 @@ import { useFeatureCan } from '@/hooks/state';
 
 export function ItemFormPurchasingSection() {
   const { accounts, taxRates } = useItemFormContext();
-  const { values } = useFormikContext<ItemFormValues>();
+  const { values, initialValues } = useFormikContext<ItemFormValues>();
+
+  // Inactive tax rates aren't offered, except the item's saved default.
+  const purchaseTaxRates = React.useMemo(
+    () => getSelectableTaxRates(taxRates, [initialValues.purchaseTaxRateId]),
+    [taxRates, initialValues.purchaseTaxRateId],
+  );
   const baseCurrency = useCurrentOrganizationBaseCurrency();
 
   const { featureCan } = useFeatureCan();
@@ -101,10 +108,10 @@ export function ItemFormPurchasingSection() {
         <FFormGroup name={'purchaseTaxRateId'} label={'Tax Rate'} inline={true}>
           <TaxRatesSelect
             name={'purchaseTaxRateId'}
-            items={taxRates}
+            items={purchaseTaxRates}
             allowCreate={true}
             fastField={true}
-            shouldUpdateDeps={{ taxRates }}
+            shouldUpdateDeps={{ taxRates: purchaseTaxRates }}
             shouldUpdate={taxRateFieldShouldUpdate}
           />
         </FFormGroup>

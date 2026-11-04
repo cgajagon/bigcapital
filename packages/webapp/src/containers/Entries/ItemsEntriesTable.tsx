@@ -94,6 +94,7 @@ function ItemEntriesTableRoot() {
   const { setItemRow, cellsLoading, isItemFetching } = useFetchItemRow({
     landedCost,
     itemType,
+    taxRates,
     notifyNewRow: (newRow, rowIndex) => {
       // Update the rate, description and quantity data of the row.
       const newRows = composeRowsOnNewRow(rowIndex, newRow, localValue);
