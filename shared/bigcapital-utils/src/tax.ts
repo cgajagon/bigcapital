@@ -33,3 +33,56 @@ export const computeLineTaxAmount = (
 
   return roundHalfAwayFromZero(raw);
 };
+
+export interface TaxComponentRate {
+  taxRateId: number;
+  rate: number;
+}
+
+export interface TaxComponentAmount extends TaxComponentRate {
+  amount: number;
+}
+
+/**
+ * Tax of one line split per group component, each rounded on its own (half
+ * away from zero). Inclusive: amount * rate_i / (100 + R), R = sum of rates.
+ */
+export const computeLineComponentTaxes = (
+  amount: number,
+  components: TaxComponentRate[],
+  isInclusive: boolean,
+): TaxComponentAmount[] => {
+  const totalRate = components.reduce((sum, c) => sum + c.rate, 0);
+
+  return components.map(({ taxRateId, rate }) => ({
+    taxRateId,
+    rate,
+    amount: !rate
+      ? 0
+      : isInclusive
+        ? roundHalfAwayFromZero((amount * rate) / (100 + totalRate))
+        : computeLineTaxAmount(amount, rate, false),
+  }));
+};
+
+/**
+ * Sums component taxes per taxRateId, in order of first appearance, keeping
+ * the first-seen rate.
+ */
+export const aggregateComponentTaxes = (
+  lines: TaxComponentAmount[][],
+): TaxComponentAmount[] => {
+  const byId = new Map<number, TaxComponentAmount>();
+
+  for (const line of lines) {
+    for (const c of line) {
+      const found = byId.get(c.taxRateId);
+      if (found) found.amount += c.amount;
+      else byId.set(c.taxRateId, { ...c });
+    }
+  }
+  return [...byId.values()].map((c) => ({
+    ...c,
+    amount: roundHalfAwayFromZero(c.amount),
+  }));
+};
