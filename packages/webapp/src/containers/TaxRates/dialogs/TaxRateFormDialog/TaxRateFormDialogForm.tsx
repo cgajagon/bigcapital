@@ -72,7 +72,11 @@ function TaxRateFormDialogFormInner({
       setSubmitting(false);
       return;
     }
-    const form = transformFormToReq(values);
+    // Editing keeps the rate's active state; a new rate is active.
+    const form = transformFormToReq(
+      values,
+      isNewMode ? true : Boolean(taxRate?.active),
+    );
 
     // Handle request success on edit.
     const handleSuccessOnEdit = () => {

@@ -50,9 +50,13 @@ export const transformApiErrors = (
 
 /**
  * Tranformes form values to request values.
+ * @param {TaxRateFormValues} form - The form values.
+ * @param {boolean} active - Whether the tax rate is active: true for a new
+ *  rate, the rate's current state on edit so editing doesn't reactivate it.
  */
 export const transformFormToReq = (
   form: TaxRateFormValues,
+  active: boolean,
 ): TaxRateFormRequestBody => {
   return {
     name: form.name,
@@ -61,7 +65,7 @@ export const transformFormToReq = (
     description: form.description,
     isCompound: form.isCompound,
     isNonRecoverable: form.isNonRecoverable,
-    active: true,
+    active,
   };
 };
 

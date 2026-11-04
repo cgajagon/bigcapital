@@ -110,9 +110,7 @@ function ConfirmEditingTaxRate() {
       <ConfirmEditFormGroup name={'confirmEdit'} helperText={''}>
         <FCheckbox
           name={'confirmEdit'}
-          label={`I understand that updating the
-          tax will mark the existing tax inactive, create a new tax, and update
-          it in the chosen transactions.`}
+          label={`I understand that transactions already saved keep the rate they were saved with, and new transactions use the new rate.`}
         />
       </ConfirmEditFormGroup>
     </EditWarningWrap>
