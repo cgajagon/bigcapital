@@ -7,12 +7,16 @@ import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
  * the same side, so the tax reports count them unchanged.
  * @param params.taxes - Tax amounts, already in the organization's currency.
  * @param params.side - `credit` for sales documents, `debit` for purchases.
+ * @param params.taxPayableAccountId - The default tax payable account.
+ * @param params.payableAccountIdByTaxRateId - The payable account of each tax
+ *   rate that has one; a rate missing from it posts to the default account.
  * @returns {ILedgerEntry[]}
  */
 export function buildTaxLedgerEntries(params: {
   taxes: Array<{ amount: number; taxRateId: number; taxRate: number }>;
   side: 'credit' | 'debit';
   taxPayableAccountId: number;
+  payableAccountIdByTaxRateId?: Record<number, number>;
   commonEntry: Partial<ILedgerEntry>;
   indexGroup: number;
   startIndex: number;
@@ -21,6 +25,7 @@ export function buildTaxLedgerEntries(params: {
     taxes,
     side,
     taxPayableAccountId,
+    payableAccountIdByTaxRateId = {},
     commonEntry,
     indexGroup,
     startIndex,
@@ -34,7 +39,8 @@ export function buildTaxLedgerEntries(params: {
           ...commonEntry,
           debit: side === 'debit' ? tax.amount : 0,
           credit: side === 'credit' ? tax.amount : 0,
-          accountId: taxPayableAccountId,
+          accountId:
+            payableAccountIdByTaxRateId[tax.taxRateId] ?? taxPayableAccountId,
           accountNormal: AccountNormal.CREDIT,
           index: startIndex + index,
           indexGroup,

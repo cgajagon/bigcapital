@@ -1,4 +1,4 @@
-import { roundHalfAwayFromZero } from '@bigcapital/utils';
+import { roundHalfAwayFromZero, TaxComponentRate } from '@bigcapital/utils';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { DiscountType } from '@/common/types/Discount';
 import { SaleInvoice } from '../models/SaleInvoice';
@@ -9,13 +9,32 @@ const TAX_PAYABLE_ACCOUNT = 2000;
 const DISCOUNT_ACCOUNT = 3000;
 const OTHER_CHARGES_ACCOUNT = 4000;
 const INCOME_ACCOUNT = 5000;
+const TPS_PAYABLE_ACCOUNT = 2101;
+const TVQ_PAYABLE_ACCOUNT = 2102;
+
+// TPS (id 1) and TVQ (id 2), the components of the group id 9.
+const TPS = { taxRateId: 1, rate: 5 };
+const TVQ = { taxRateId: 2, rate: 9.975 };
+const PAYABLE_ACCOUNTS_BY_RATE_ID = {
+  1: TPS_PAYABLE_ACCOUNT,
+  2: TVQ_PAYABLE_ACCOUNT,
+};
 
 interface TestLine {
   amount: number;
   taxRate?: number;
+  taxRateId?: number | null;
+  taxComponents?: TaxComponentRate[];
   isInclusiveTax?: boolean;
   discount?: number;
 }
+
+const groupLine = (amount: number): TestLine => ({
+  amount,
+  taxRate: 14.975,
+  taxRateId: 9,
+  taxComponents: [TPS, TVQ],
+});
 
 const buildInvoice = (
   lines: TestLine[],
@@ -48,15 +67,20 @@ const buildInvoice = (
       rate: line.amount,
       discount: line.discount ?? 0,
       discountType: DiscountType.Amount,
-      taxRateId: line.taxRate ? 7 : null,
+      taxRateId:
+        line.taxRateId !== undefined ? line.taxRateId : line.taxRate ? 7 : null,
       taxRate: line.taxRate ?? 0,
+      taxComponents: line.taxComponents ?? null,
       isInclusiveTax: line.isInclusiveTax ?? isInclusiveTax,
     })),
     ...overrides,
   });
 };
 
-const getGLEntries = (invoice: SaleInvoice): ILedgerEntry[] => {
+const getGLEntries = (
+  invoice: SaleInvoice,
+  payableAccountsByRateId?: Record<number, number>,
+): ILedgerEntry[] => {
   const gl = new InvoiceAccrualGL(invoice);
 
   gl.setARAccountId(AR_ACCOUNT);
@@ -64,6 +88,9 @@ const getGLEntries = (invoice: SaleInvoice): ILedgerEntry[] => {
   gl.setDiscountAccountId(DISCOUNT_ACCOUNT);
   gl.setOtherChargesAccountId(OTHER_CHARGES_ACCOUNT);
 
+  if (payableAccountsByRateId) {
+    gl.setTaxPayableAccountsByRateId(payableAccountsByRateId);
+  }
   return gl.getInvoiceGLEntries();
 };
 
@@ -78,6 +105,27 @@ const income = (legs: ILedgerEntry[]) =>
 
 const tax = (legs: ILedgerEntry[]) =>
   legsOf(legs, TAX_PAYABLE_ACCOUNT).map((leg) => leg.credit);
+
+// The tax entries on any tax payable account, in posting order.
+const taxLegs = (legs: ILedgerEntry[]) =>
+  legs
+    .filter((leg) =>
+      [TAX_PAYABLE_ACCOUNT, TPS_PAYABLE_ACCOUNT, TVQ_PAYABLE_ACCOUNT].includes(
+        leg.accountId,
+      ),
+    )
+    .map(({ credit, accountId, taxRateId, taxRate }) => ({
+      credit,
+      accountId,
+      taxRateId,
+      taxRate,
+    }));
+
+const taggedIncome = (legs: ILedgerEntry[]) =>
+  legsOf(legs, INCOME_ACCOUNT).map(({ credit, taxRateId }) => ({
+    credit,
+    taxRateId,
+  }));
 
 // Σdebit and Σcredit agree in thousandths, the precision of accounts_transactions.
 const balanced = (legs: ILedgerEntry[]) =>
@@ -242,5 +290,183 @@ describe('InvoiceAccrualGL', () => {
 
     expect(income(legs)).toEqual([90]);
     expect(tax(legs)).toEqual([14.98]);
+  });
+
+  describe('tax groups', () => {
+    it("posts each component to its tax's payable account", () => {
+      const legs = getGLEntries(
+        buildInvoice([groupLine(37.5), groupLine(-4.5)], {
+          taxAmountWithheld: 4.94,
+        }),
+        PAYABLE_ACCOUNTS_BY_RATE_ID,
+      );
+
+      expect(taxLegs(legs)).toEqual([
+        {
+          credit: 1.88,
+          accountId: TPS_PAYABLE_ACCOUNT,
+          taxRateId: 1,
+          taxRate: 5,
+        },
+        {
+          credit: 3.74,
+          accountId: TVQ_PAYABLE_ACCOUNT,
+          taxRateId: 2,
+          taxRate: 9.975,
+        },
+        {
+          credit: -0.23,
+          accountId: TPS_PAYABLE_ACCOUNT,
+          taxRateId: 1,
+          taxRate: 5,
+        },
+        {
+          credit: -0.45,
+          accountId: TVQ_PAYABLE_ACCOUNT,
+          taxRateId: 2,
+          taxRate: 9.975,
+        },
+      ]);
+      expect(receivable(legs)).toEqual([37.94]);
+      expect(taggedIncome(legs)).toEqual([
+        { credit: 37.5, taxRateId: 9 },
+        { credit: -4.5, taxRateId: 9 },
+      ]);
+      expect(balanced(legs)).toBe(true);
+    });
+
+    it('balances in the organization currency at exchange rate 1.3567', () => {
+      const legs = getGLEntries(
+        buildInvoice([groupLine(37.5), groupLine(-4.5)], {
+          taxAmountWithheld: 4.94,
+          exchangeRate: 1.3567,
+        }),
+        PAYABLE_ACCOUNTS_BY_RATE_ID,
+      );
+
+      expect(taxLegs(legs).map((leg) => leg.accountId)).toEqual([
+        TPS_PAYABLE_ACCOUNT,
+        TVQ_PAYABLE_ACCOUNT,
+        TPS_PAYABLE_ACCOUNT,
+        TVQ_PAYABLE_ACCOUNT,
+      ]);
+      expect(balanced(legs)).toBe(true);
+      expect(atStoredPrecision(legs)).toBe(true);
+    });
+
+    it('splits tax-inclusive group lines of both signs into income and component taxes', () => {
+      const legs = getGLEntries(
+        buildInvoice([groupLine(114.975), groupLine(-114.975)], {
+          taxAmountWithheld: 0,
+          isInclusiveTax: true,
+        }),
+        PAYABLE_ACCOUNTS_BY_RATE_ID,
+      );
+
+      expect(
+        taxLegs(legs).map(({ credit, accountId }) => [credit, accountId]),
+      ).toEqual([
+        [5, TPS_PAYABLE_ACCOUNT],
+        [9.98, TVQ_PAYABLE_ACCOUNT],
+        [-5, TPS_PAYABLE_ACCOUNT],
+        [-9.98, TVQ_PAYABLE_ACCOUNT],
+      ]);
+      expect(income(legs)).toEqual([99.995, -99.995]);
+      expect(balanced(legs)).toBe(true);
+    });
+
+    it('balances a lone negative tax-inclusive group line', () => {
+      const legs = getGLEntries(
+        buildInvoice([groupLine(-114.975)], {
+          taxAmountWithheld: -14.98,
+          isInclusiveTax: true,
+        }),
+        PAYABLE_ACCOUNTS_BY_RATE_ID,
+      );
+
+      expect(receivable(legs)).toEqual([-114.975]);
+      expect(income(legs)).toEqual([-99.995]);
+      expect(taxLegs(legs).map((leg) => leg.credit)).toEqual([-5, -9.98]);
+      expect(balanced(legs)).toBe(true);
+    });
+
+    it('posts every component to the default tax payable account without the map', () => {
+      const legs = getGLEntries(
+        buildInvoice([groupLine(37.5), groupLine(-4.5)], {
+          taxAmountWithheld: 4.94,
+        }),
+      );
+
+      expect(taxLegs(legs)).toEqual([
+        {
+          credit: 1.88,
+          accountId: TAX_PAYABLE_ACCOUNT,
+          taxRateId: 1,
+          taxRate: 5,
+        },
+        {
+          credit: 3.74,
+          accountId: TAX_PAYABLE_ACCOUNT,
+          taxRateId: 2,
+          taxRate: 9.975,
+        },
+        {
+          credit: -0.23,
+          accountId: TAX_PAYABLE_ACCOUNT,
+          taxRateId: 1,
+          taxRate: 5,
+        },
+        {
+          credit: -0.45,
+          accountId: TAX_PAYABLE_ACCOUNT,
+          taxRateId: 2,
+          taxRate: 9.975,
+        },
+      ]);
+      expect(balanced(legs)).toBe(true);
+    });
+
+    it('posts a rate missing from the map to the default tax payable account', () => {
+      const legs = getGLEntries(
+        buildInvoice(
+          [groupLine(37.5), { amount: 10, taxRate: 5, taxRateId: 3 }],
+          { taxAmountWithheld: 6.12 },
+        ),
+        PAYABLE_ACCOUNTS_BY_RATE_ID,
+      );
+
+      expect(
+        taxLegs(legs).map(({ credit, accountId, taxRateId }) => [
+          credit,
+          accountId,
+          taxRateId,
+        ]),
+      ).toEqual([
+        [1.88, TPS_PAYABLE_ACCOUNT, 1],
+        [3.74, TVQ_PAYABLE_ACCOUNT, 2],
+        [0.5, TAX_PAYABLE_ACCOUNT, 3],
+      ]);
+      expect(balanced(legs)).toBe(true);
+    });
+
+    it('keeps posting the tax of a taxed line without a tax rate id', () => {
+      // Stale data (rate set, id missing): A3 posted the line tax tagged null.
+      const legs = getGLEntries(
+        buildInvoice([{ amount: 100, taxRate: 10, taxRateId: null }], {
+          taxAmountWithheld: 10,
+        }),
+        PAYABLE_ACCOUNTS_BY_RATE_ID,
+      );
+
+      expect(taxLegs(legs)).toEqual([
+        {
+          credit: 10,
+          accountId: TAX_PAYABLE_ACCOUNT,
+          taxRateId: null,
+          taxRate: 10,
+        },
+      ]);
+      expect(balanced(legs)).toBe(true);
+    });
   });
 });

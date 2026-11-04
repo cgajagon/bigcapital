@@ -1,4 +1,4 @@
-import { roundHalfAwayFromZero } from '@bigcapital/utils';
+import { roundHalfAwayFromZero, TaxComponentAmount } from '@bigcapital/utils';
 import type { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
 
 /**
@@ -49,6 +49,43 @@ export const getDocumentLineTaxes = (document: {
     (document.entries ?? []).map((entry) => entry.taxAmount),
     document.taxAmountWithheld,
   );
+
+/**
+ * Gets the tax of each line of a document split per tax rate: one item per
+ * group component, one for a plain rate, none for an untaxed line. Each line's
+ * components add up to its allocated line tax (`getDocumentLineTaxes`); the
+ * difference goes to its largest component.
+ * A taxed line without a tax rate id (stale data) keeps its line tax as one
+ * item, so it is still posted.
+ * @param document
+ * @returns {TaxComponentAmount[][]} One array per line, in entry order.
+ */
+export const getDocumentLineComponentTaxes = (document: {
+  entries?: ItemEntry[];
+  taxAmountWithheld?: number | null;
+}): TaxComponentAmount[][] => {
+  const lineTaxes = getDocumentLineTaxes(document);
+
+  return (document.entries ?? []).map((entry, index) => {
+    const lineTax = lineTaxes[index];
+    // A plain object entry has no getter: it posts its line tax, as before.
+    const components = entry.componentTaxes ?? [];
+
+    if (components.length === 0) {
+      return lineTax !== 0
+        ? [{ taxRateId: entry.taxRateId, rate: entry.taxRate, amount: lineTax }]
+        : [];
+    }
+    const amounts = allocateDocumentLineTaxes(
+      components.map((component) => component.amount),
+      lineTax,
+    );
+    return components.map((component, i) => ({
+      ...component,
+      amount: amounts[i],
+    }));
+  });
+};
 
 /**
  * Sums the allocated line taxes of a document per tax rate, rounded to cents.

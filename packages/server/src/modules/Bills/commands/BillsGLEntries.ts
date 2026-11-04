@@ -6,6 +6,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { BillGL } from './BillsGL';
 import { TenantModelProxy } from '@/modules/System/models/TenantBaseModel';
 import { BillLandedCostsBridge } from '../integrations/BillLandedCostsBridge';
+import { TaxRateModel } from '@/modules/TaxRates/models/TaxRate.model';
+import { loadTaxPayableAccountsByRateId } from '@/modules/TaxRates/TaxPayableAccounts';
 
 @Injectable()
 export class BillGLEntries {
@@ -13,6 +15,7 @@ export class BillGLEntries {
    * @param {LedgerStorageService} ledgerStorage - Ledger storage service.
    * @param {AccountRepository} accountRepository - Account repository.
    * @param {typeof Bill} billModel - Bill model.
+   * @param {typeof TaxRateModel} taxRateModel - Tax rate model.
    */
   constructor(
     private readonly ledgerStorage: LedgerStorageService,
@@ -21,6 +24,9 @@ export class BillGLEntries {
 
     @Inject(Bill.name)
     private readonly billModel: TenantModelProxy<typeof Bill>,
+
+    @Inject(TaxRateModel.name)
+    private readonly taxRateModel: TenantModelProxy<typeof TaxRateModel>,
   ) {}
 
   /**
@@ -56,6 +62,12 @@ export class BillGLEntries {
     const taxPayableAccount =
       await this.accountRepository.findOrCreateTaxPayable({}, trx);
 
+    // The payable account of each tax rate that has one.
+    const taxPayableAccountsByRateId = await loadTaxPayableAccountsByRateId(
+      this.taxRateModel,
+      trx,
+    );
+
     // Find or create other expenses account.
     const otherExpensesAccount =
       await this.accountRepository.findOrCreateOtherExpensesAccount({}, trx);
@@ -72,6 +84,7 @@ export class BillGLEntries {
     )
       .setPayableAccountId(APAccount.id)
       .setTaxPayableAccountId(taxPayableAccount.id)
+      .setTaxPayableAccountsByRateId(taxPayableAccountsByRateId)
       .setPurchaseDiscountAccountId(purchaseDiscountAccount.id)
       .setOtherExpensesAccountId(otherExpensesAccount.id)
       .getBillLedger();

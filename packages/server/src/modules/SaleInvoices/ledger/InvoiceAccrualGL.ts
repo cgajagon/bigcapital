@@ -1,4 +1,5 @@
 import * as R from 'ramda';
+import { TaxComponentAmount } from '@bigcapital/utils';
 import { ILedger } from '@/modules/Ledger/types/Ledger.types';
 import { AccountNormal } from '@/modules/Accounts/Accounts.types';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
@@ -8,7 +9,10 @@ import {
   getLargestLedgerEntry,
   roundToLedgerPrecision,
 } from '@/modules/Ledger/LedgerPrecision';
-import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
+import {
+  getDocumentLineComponentTaxes,
+  getDocumentLineTaxes,
+} from '@/modules/TaxRates/utils';
 import { buildTaxLedgerEntries } from '@/modules/TaxRates/TaxLedgerEntries';
 import { SaleInvoice } from '../models/SaleInvoice';
 import { AccountingBasis } from '@/common/types/AccountingBasis';
@@ -17,6 +21,7 @@ export class InvoiceAccrualGL {
   private saleInvoice: SaleInvoice;
   private ARAccountId: number;
   private taxPayableAccountId: number;
+  private taxPayableAccountsByRateId: Record<number, number> = {};
   private discountAccountId: number;
   private otherChargesAccountId: number;
 
@@ -42,6 +47,18 @@ export class InvoiceAccrualGL {
    */
   setTaxPayableAccountId(taxPayableAccountId: number) {
     this.taxPayableAccountId = taxPayableAccountId;
+  }
+
+  /**
+   * Set the payable account of each tax rate that has one. A tax rate missing
+   * from the map posts to the tax payable account.
+   * @param {Record<number, number>} taxPayableAccountsByRateId
+   */
+  setTaxPayableAccountsByRateId(
+    taxPayableAccountsByRateId: Record<number, number>,
+  ) {
+    this.taxPayableAccountsByRateId = taxPayableAccountsByRateId;
+    return this;
   }
 
   /**
@@ -137,19 +154,24 @@ export class InvoiceAccrualGL {
   );
 
   /**
-   * Retreives the GL entries of tax payable, one per taxed line.
-   * @param {number[]} lineTaxes - Line taxes, allocated to the stored document tax.
+   * Retreives the GL entries of tax payable, one per taxed line and tax rate
+   * (each component of a tax group), on that tax rate's payable account.
+   * @param {TaxComponentAmount[][]} lineComponentTaxes - Each line's taxes per
+   *   tax rate, allocated to the stored document tax.
    * @returns {ILedgerEntry[]}
    */
-  private getInvoiceTaxEntries(lineTaxes: number[]): ILedgerEntry[] {
+  private getInvoiceTaxEntries(
+    lineComponentTaxes: TaxComponentAmount[][],
+  ): ILedgerEntry[] {
     return buildTaxLedgerEntries({
-      taxes: this.saleInvoice.entries.map((entry, index) => ({
-        amount: lineTaxes[index] * this.saleInvoice.exchangeRate,
-        taxRateId: entry.taxRateId,
-        taxRate: entry.taxRate,
+      taxes: lineComponentTaxes.flat().map((component) => ({
+        amount: component.amount * this.saleInvoice.exchangeRate,
+        taxRateId: component.taxRateId,
+        taxRate: component.rate,
       })),
       side: 'credit',
       taxPayableAccountId: this.taxPayableAccountId,
+      payableAccountIdByTaxRateId: this.taxPayableAccountsByRateId,
       commonEntry: this.invoiceGLCommonEntry,
       indexGroup: 30,
       startIndex: 1,
@@ -200,7 +222,9 @@ export class InvoiceAccrualGL {
     const creditEntries = this.saleInvoice.entries.map((entry, index) =>
       this.getInvoiceItemEntry(entry, lineTaxes[index], index),
     );
-    const taxEntries = this.getInvoiceTaxEntries(lineTaxes);
+    const taxEntries = this.getInvoiceTaxEntries(
+      getDocumentLineComponentTaxes(this.saleInvoice),
+    );
 
     // The largest income entry by absolute amount, the first one on a tie.
     const largestCreditEntry = getLargestLedgerEntry(creditEntries, 'credit');

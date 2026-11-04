@@ -1,5 +1,5 @@
 import { AccountNormal } from '@/modules/Accounts/Accounts.types';
-import { roundHalfAwayFromZero } from '@bigcapital/utils';
+import { roundHalfAwayFromZero, TaxComponentRate } from '@bigcapital/utils';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { DiscountType } from '@/common/types/Discount';
 import { Bill } from '../models/Bill';
@@ -115,13 +115,29 @@ describe('BillGL tax', () => {
   const PAYABLE = 1;
   const TAX_PAYABLE = 2;
   const EXPENSE = 200;
+  const TPS_PAYABLE = 2101;
+  const TVQ_PAYABLE = 2102;
+
+  // TPS (id 1) and TVQ (id 2), the components of the group id 9.
+  const TPS = { taxRateId: 1, rate: 5 };
+  const TVQ = { taxRateId: 2, rate: 9.975 };
+  const PAYABLE_ACCOUNTS_BY_RATE_ID = { 1: TPS_PAYABLE, 2: TVQ_PAYABLE };
 
   interface TestLine {
     amount: number;
     taxRate?: number;
+    taxRateId?: number | null;
+    taxComponents?: TaxComponentRate[];
     isInclusiveTax?: boolean;
     discount?: number;
   }
+
+  const groupLine = (amount: number): TestLine => ({
+    amount,
+    taxRate: 14.975,
+    taxRateId: 9,
+    taxComponents: [TPS, TVQ],
+  });
 
   const buildTaxBill = (
     lines: TestLine[],
@@ -153,8 +169,14 @@ describe('BillGL tax', () => {
         costAccountId: EXPENSE,
         discount: line.discount ?? 0,
         discountType: DiscountType.Amount,
-        taxRateId: line.taxRate ? 7 : null,
+        taxRateId:
+          line.taxRateId !== undefined
+            ? line.taxRateId
+            : line.taxRate
+              ? 7
+              : null,
         taxRate: line.taxRate ?? 0,
+        taxComponents: line.taxComponents ?? null,
         isInclusiveTax: line.isInclusiveTax ?? isInclusiveTax,
         item: { type: 'service' },
       })),
@@ -165,6 +187,16 @@ describe('BillGL tax', () => {
   const getLegs = (bill: Bill): ILedgerEntry[] =>
     buildLedger(bill).getEntries();
 
+  const getMappedLegs = (bill: Bill): ILedgerEntry[] =>
+    new BillGL(bill)
+      .setPayableAccountId(PAYABLE)
+      .setTaxPayableAccountId(TAX_PAYABLE)
+      .setPurchaseDiscountAccountId(3)
+      .setOtherExpensesAccountId(4)
+      .setTaxPayableAccountsByRateId(PAYABLE_ACCOUNTS_BY_RATE_ID)
+      .getBillLedger()
+      .getEntries();
+
   const legsOf = (legs: ILedgerEntry[], accountId: number) =>
     legs.filter((leg) => leg.accountId === accountId);
   const payable = (legs: ILedgerEntry[]) =>
@@ -173,6 +205,19 @@ describe('BillGL tax', () => {
     legsOf(legs, EXPENSE).map((leg) => leg.debit);
   const tax = (legs: ILedgerEntry[]) =>
     legsOf(legs, TAX_PAYABLE).map((leg) => leg.debit);
+
+  // The tax entries on any tax payable account, in posting order.
+  const taxLegs = (legs: ILedgerEntry[]) =>
+    legs
+      .filter((leg) =>
+        [TAX_PAYABLE, TPS_PAYABLE, TVQ_PAYABLE].includes(leg.accountId),
+      )
+      .map(({ debit, accountId, taxRateId, taxRate }) => ({
+        debit,
+        accountId,
+        taxRateId,
+        taxRate,
+      }));
 
   // Σdebit and Σcredit agree in thousandths, the precision of accounts_transactions.
   const balanced = (legs: ILedgerEntry[]) =>
@@ -312,5 +357,89 @@ describe('BillGL tax', () => {
 
     expect(expense(legs)).toEqual([90]);
     expect(tax(legs)).toEqual([14.98]);
+  });
+
+  describe('tax groups', () => {
+    it("debits each component on its tax's payable account", () => {
+      const legs = getMappedLegs(
+        buildTaxBill([groupLine(37.5), groupLine(-4.5)], {
+          taxAmountWithheld: 4.94,
+        }),
+      );
+
+      expect(taxLegs(legs)).toEqual([
+        { debit: 1.88, accountId: TPS_PAYABLE, taxRateId: 1, taxRate: 5 },
+        { debit: 3.74, accountId: TVQ_PAYABLE, taxRateId: 2, taxRate: 9.975 },
+        { debit: -0.23, accountId: TPS_PAYABLE, taxRateId: 1, taxRate: 5 },
+        { debit: -0.45, accountId: TVQ_PAYABLE, taxRateId: 2, taxRate: 9.975 },
+      ]);
+      expect(payable(legs)).toEqual([37.94]);
+      expect(expense(legs)).toEqual([37.5, -4.5]);
+      expect(balanced(legs)).toBe(true);
+    });
+
+    it('balances in the organization currency at exchange rate 1.3567', () => {
+      const legs = getMappedLegs(
+        buildTaxBill([groupLine(37.5), groupLine(-4.5)], {
+          taxAmountWithheld: 4.94,
+          exchangeRate: 1.3567,
+        }),
+      );
+
+      expect(taxLegs(legs).map((leg) => leg.accountId)).toEqual([
+        TPS_PAYABLE,
+        TVQ_PAYABLE,
+        TPS_PAYABLE,
+        TVQ_PAYABLE,
+      ]);
+      expect(balanced(legs)).toBe(true);
+      expect(atStoredPrecision(legs)).toBe(true);
+    });
+
+    it('splits tax-inclusive group lines of both signs into expense and component taxes', () => {
+      const legs = getMappedLegs(
+        buildTaxBill([groupLine(114.975), groupLine(-114.975)], {
+          taxAmountWithheld: 0,
+          isInclusiveTax: true,
+        }),
+      );
+
+      expect(
+        taxLegs(legs).map(({ debit, accountId }) => [debit, accountId]),
+      ).toEqual([
+        [5, TPS_PAYABLE],
+        [9.98, TVQ_PAYABLE],
+        [-5, TPS_PAYABLE],
+        [-9.98, TVQ_PAYABLE],
+      ]);
+      expect(expense(legs)).toEqual([99.995, -99.995]);
+      expect(balanced(legs)).toBe(true);
+    });
+
+    it('debits every component on the default tax payable account without the map', () => {
+      const legs = getLegs(
+        buildTaxBill([groupLine(37.5), groupLine(-4.5)], {
+          taxAmountWithheld: 4.94,
+        }),
+      );
+
+      expect(tax(legs)).toEqual([1.88, 3.74, -0.23, -0.45]);
+      expect(taxLegs(legs).map((leg) => leg.taxRateId)).toEqual([1, 2, 1, 2]);
+      expect(balanced(legs)).toBe(true);
+    });
+
+    it('keeps debiting the tax of a taxed line without a tax rate id', () => {
+      // Stale data (rate set, id missing): A3 posted the line tax tagged null.
+      const legs = getMappedLegs(
+        buildTaxBill([{ amount: 100, taxRate: 10, taxRateId: null }], {
+          taxAmountWithheld: 10,
+        }),
+      );
+
+      expect(taxLegs(legs)).toEqual([
+        { debit: 10, accountId: TAX_PAYABLE, taxRateId: null, taxRate: 10 },
+      ]);
+      expect(balanced(legs)).toBe(true);
+    });
   });
 });

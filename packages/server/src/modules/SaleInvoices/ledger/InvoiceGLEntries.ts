@@ -5,6 +5,8 @@ import { SaleInvoice } from '../models/SaleInvoice';
 import { AccountRepository } from '../../Accounts/repositories/Account.repository';
 import { InvoiceAccrualGL } from './InvoiceAccrualGL';
 import { TenantModelProxy } from '@/modules/System/models/TenantBaseModel';
+import { TaxRateModel } from '@/modules/TaxRates/models/TaxRate.model';
+import { loadTaxPayableAccountsByRateId } from '@/modules/TaxRates/TaxPayableAccounts';
 
 @Injectable()
 export class SaleInvoiceGLEntries {
@@ -14,6 +16,9 @@ export class SaleInvoiceGLEntries {
 
     @Inject(SaleInvoice.name)
     private readonly saleInvoiceModel: TenantModelProxy<typeof SaleInvoice>,
+
+    @Inject(TaxRateModel.name)
+    private readonly taxRateModel: TenantModelProxy<typeof TaxRateModel>,
   ) {}
 
   /**
@@ -40,6 +45,11 @@ export class SaleInvoiceGLEntries {
     // Find or create tax payable account.
     const taxPayableAccount =
       await this.accountRepository.findOrCreateTaxPayable({}, trx);
+    // The payable account of each tax rate that has one.
+    const taxPayableAccountsByRateId = await loadTaxPayableAccountsByRateId(
+      this.taxRateModel,
+      trx,
+    );
     // Find or create the discount expense account.
     const discountAccount =
       await this.accountRepository.findOrCreateDiscountAccount({}, trx);
@@ -52,6 +62,7 @@ export class SaleInvoiceGLEntries {
 
     invoiceAccrualGL.setARAccountId(ARAccount.id);
     invoiceAccrualGL.setTaxPayableAccountId(taxPayableAccount.id);
+    invoiceAccrualGL.setTaxPayableAccountsByRateId(taxPayableAccountsByRateId);
     invoiceAccrualGL.setDiscountAccountId(discountAccount.id);
     invoiceAccrualGL.setOtherChargesAccountId(otherChargesAccount.id);
 

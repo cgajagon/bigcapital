@@ -1,4 +1,5 @@
 import * as moment from 'moment';
+import { TaxComponentAmount } from '@bigcapital/utils';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
 import { Bill } from '../models/Bill';
@@ -8,7 +9,10 @@ import {
   getLargestLedgerEntry,
   roundToLedgerPrecision,
 } from '@/modules/Ledger/LedgerPrecision';
-import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
+import {
+  getDocumentLineComponentTaxes,
+  getDocumentLineTaxes,
+} from '@/modules/TaxRates/utils';
 import { buildTaxLedgerEntries } from '@/modules/TaxRates/TaxLedgerEntries';
 import {
   IBillItemAllocatedCost,
@@ -22,6 +26,7 @@ export class BillGL {
   private landedCostLedgerEntries: IBillLandedCostLedgerEntry[];
   private payableAccountId: number;
   private taxPayableAccountId: number;
+  private taxPayableAccountsByRateId: Record<number, number> = {};
   private purchaseDiscountAccountId: number;
   private otherExpensesAccountId: number;
 
@@ -44,6 +49,18 @@ export class BillGL {
 
   setTaxPayableAccountId(taxPayableAccountId: number) {
     this.taxPayableAccountId = taxPayableAccountId;
+    return this;
+  }
+
+  /**
+   * Set the payable account of each tax rate that has one. A tax rate missing
+   * from the map posts to the tax payable account.
+   * @param {Record<number, number>} taxPayableAccountsByRateId
+   */
+  setTaxPayableAccountsByRateId(
+    taxPayableAccountsByRateId: Record<number, number>,
+  ) {
+    this.taxPayableAccountsByRateId = taxPayableAccountsByRateId;
     return this;
   }
 
@@ -160,21 +177,26 @@ export class BillGL {
   }
 
   /**
-   * Retrieves the bill tax GL entries, one per taxed line.
-   * @param {number[]} lineTaxes - Line taxes, allocated to the stored document tax.
+   * Retrieves the bill tax GL entries, one per taxed line and tax rate (each
+   * component of a tax group), on that tax rate's payable account.
+   * @param {TaxComponentAmount[][]} lineComponentTaxes - Each line's taxes per
+   *   tax rate, allocated to the stored document tax.
    * @returns {ILedgerEntry[]}
    */
-  private getBillTaxEntries = (lineTaxes: number[]): ILedgerEntry[] => {
+  private getBillTaxEntries = (
+    lineComponentTaxes: TaxComponentAmount[][],
+  ): ILedgerEntry[] => {
     const exchangeRate = this.bill.exchangeRate || 1;
 
     return buildTaxLedgerEntries({
-      taxes: this.bill.entries.map((entry, index) => ({
-        amount: lineTaxes[index] * exchangeRate,
-        taxRateId: entry.taxRateId,
-        taxRate: entry.taxRate,
+      taxes: lineComponentTaxes.flat().map((component) => ({
+        amount: component.amount * exchangeRate,
+        taxRateId: component.taxRateId,
+        taxRate: component.rate,
       })),
       side: 'debit',
       taxPayableAccountId: this.taxPayableAccountId,
+      payableAccountIdByTaxRateId: this.taxPayableAccountsByRateId,
       commonEntry: this.billCommonEntry,
       indexGroup: 30,
       startIndex: 0,
@@ -240,7 +262,7 @@ export class BillGL {
         payableEntry,
         ...itemsEntries,
         ...landedCostEntries,
-        ...this.getBillTaxEntries(lineTaxes),
+        ...this.getBillTaxEntries(getDocumentLineComponentTaxes(this.bill)),
         this.purchaseDiscountEntry,
         this.adjustmentEntry,
       ],
