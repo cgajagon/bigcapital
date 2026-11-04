@@ -7,6 +7,7 @@ import {
   createCustomer,
   createServiceItem,
   createTaxRate,
+  createVendor,
   getBaseCurrency,
 } from './_utils/gl';
 
@@ -16,6 +17,22 @@ const invoiceDTO = (customerId: number, entries: object[]) => ({
   dueDate: '2023-02-01',
   invoiceNo: faker.string.uuid(),
   delivered: true,
+  branchId: 1,
+  warehouseId: 1,
+  entries: entries.map((entry, index) => ({
+    index: index + 1,
+    quantity: 1,
+    description: 'Tax rate e2e line',
+    ...entry,
+  })),
+});
+
+const billDTO = (vendorId: number, entries: object[]) => ({
+  vendorId,
+  billDate: '2023-01-01',
+  dueDate: '2023-02-01',
+  billNumber: faker.string.uuid(),
+  open: true,
   branchId: 1,
   warehouseId: 1,
   entries: entries.map((entry, index) => ({
@@ -162,6 +179,97 @@ describe('Tax Rates (e2e)', () => {
       await editTaxRate(taxRateId, taxRateBody(5)).expect(200);
 
       expect(Boolean((await getTaxRate(taxRateId)).active)).toBe(true);
+    });
+  });
+
+  describe('saved documents', () => {
+    const lineTaxRates = (body: any) =>
+      body.entries.map((entry: any) => Number(entry.tax_rate));
+
+    it('an invoice keeps its percentage when re-saved after a rate edit', async () => {
+      const taxRateA = await createTaxRate(10);
+      const taxRateB = await createTaxRate(5);
+      const dto = invoiceDTO(customerId, [
+        { itemId, rate: 1000, taxRateId: taxRateA },
+      ]);
+      const invoiceId = await createInvoice(dto);
+
+      await editTaxRate(taxRateA, taxRateBody(20)).expect(200);
+
+      await request(app.getHttpServer())
+        .put(`/sale-invoices/${invoiceId}`)
+        .set(authHeaders())
+        .send(
+          invoiceDTO(customerId, [
+            { itemId, rate: 1000, taxRateId: taxRateA },
+            { itemId, rate: 500, taxRateId: taxRateA },
+            { itemId, rate: 200, taxRateId: taxRateB },
+          ]),
+        )
+        .expect(200);
+
+      const saved = await request(app.getHttpServer())
+        .get(`/sale-invoices/${invoiceId}`)
+        .set(authHeaders())
+        .expect(200);
+
+      expect(lineTaxRates(saved.body)).toEqual([10, 10, 5]);
+      expect(Number(saved.body.tax_amount_withheld)).toBe(160);
+
+      const newInvoiceId = await createInvoice(
+        invoiceDTO(customerId, [{ itemId, rate: 1000, taxRateId: taxRateA }]),
+      );
+      const newInvoice = await request(app.getHttpServer())
+        .get(`/sale-invoices/${newInvoiceId}`)
+        .set(authHeaders())
+        .expect(200);
+
+      expect(lineTaxRates(newInvoice.body)).toEqual([20]);
+      expect(Number(newInvoice.body.tax_amount_withheld)).toBe(200);
+    });
+
+    it('a bill keeps its percentage when re-saved after a rate edit', async () => {
+      const vendorId = await createVendor(await getBaseCurrency());
+      const taxRateA = await createTaxRate(10);
+      const created = await request(app.getHttpServer())
+        .post('/bills')
+        .set(authHeaders())
+        .send(billDTO(vendorId, [{ itemId, rate: 1000, taxRateId: taxRateA }]))
+        .expect(201);
+      const billId = created.body.id;
+
+      await editTaxRate(taxRateA, taxRateBody(20)).expect(200);
+
+      await request(app.getHttpServer())
+        .put(`/bills/${billId}`)
+        .set(authHeaders())
+        .send(
+          billDTO(vendorId, [
+            { itemId, rate: 1000, taxRateId: taxRateA },
+            { itemId, rate: 500, taxRateId: taxRateA },
+          ]),
+        )
+        .expect(200);
+
+      const saved = await request(app.getHttpServer())
+        .get(`/bills/${billId}`)
+        .set(authHeaders())
+        .expect(200);
+
+      expect(lineTaxRates(saved.body)).toEqual([10, 10]);
+      expect(Number(saved.body.tax_amount_withheld)).toBe(150);
+
+      const newBill = await request(app.getHttpServer())
+        .post('/bills')
+        .set(authHeaders())
+        .send(billDTO(vendorId, [{ itemId, rate: 1000, taxRateId: taxRateA }]))
+        .expect(201);
+      const newBillBody = await request(app.getHttpServer())
+        .get(`/bills/${newBill.body.id}`)
+        .set(authHeaders())
+        .expect(200);
+
+      expect(lineTaxRates(newBillBody.body)).toEqual([20]);
     });
   });
 
