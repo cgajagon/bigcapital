@@ -68,6 +68,12 @@ export class SalesTaxLiabilitySummaryRepository {
   taxRates: Array<ModelObject<TaxRateModel>>;
 
   /**
+   * Component rate ids of each tax group (group id -> component ids).
+   * @param {Record<number, number[]>}
+   */
+  taxGroupComponentIds: Record<number, number[]> = {};
+
+  /**
    * @param {SalesTaxLiabilitySummaryQuery}
    */
   filter: SalesTaxLiabilitySummaryQuery;
@@ -81,6 +87,7 @@ export class SalesTaxLiabilitySummaryRepository {
 
     await this.initAccountingBasis();
     await this.initTaxRates();
+    this.taxGroupComponentIds = await this.getTaxGroupComponentIds();
     await this.initTaxesPayableByTaxRateId();
     await this.initAccountTransactionsByTaxRateId();
   }
@@ -130,8 +137,29 @@ export class SalesTaxLiabilitySummaryRepository {
    * @returns {Promise<TaxRate[]>}
    */
   public getTaxRates = () => {
-    return this.taxRateModel().query().orderBy('name', 'desc');
+    return this.taxRateModel()
+      .query()
+      .where('is_group', false)
+      .orderBy('name', 'desc');
   };
+
+  /**
+   * Retrieves the component rate ids of each tax group.
+   * @returns {Promise<Record<number, number[]>>} Group id to component ids.
+   */
+  public async getTaxGroupComponentIds(): Promise<Record<number, number[]>> {
+    const groups = await this.taxRateModel()
+      .query()
+      .where('is_group', true)
+      .withGraphFetched('components');
+
+    return Object.fromEntries(
+      groups.map((group) => [
+        group.id,
+        (group.components ?? []).map((component) => component.id),
+      ]),
+    );
+  }
 
   /**
    * Retrieve taxes payable sum grouped by tax rate id.

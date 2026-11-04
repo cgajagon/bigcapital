@@ -11,6 +11,8 @@ const createQueryBuilder = (result: unknown) => {
     select: jest.fn(() => builder),
     sum: jest.fn(() => builder),
     orderBy: jest.fn(() => builder),
+    where: jest.fn(() => builder),
+    withGraphFetched: jest.fn(() => builder),
     then: (resolve: (value: unknown) => unknown) =>
       Promise.resolve(result).then(resolve),
   };
@@ -34,6 +36,13 @@ describe('SalesTaxLiabilitySummaryRepository', () => {
     const taxRatesQuery = createQueryBuilder([
       { id: 1, name: 'Tax', rate: 10 },
     ]);
+    const groupsQuery = createQueryBuilder([
+      {
+        id: 9,
+        isGroup: true,
+        components: [{ id: 1 }, { id: 2 }],
+      },
+    ]);
     const accountsQuery = createQueryBuilder([
       { id: 1, accountType: 'tax-payable' },
     ]);
@@ -51,8 +60,12 @@ describe('SalesTaxLiabilitySummaryRepository', () => {
       .mockReturnValueOnce(salesQuery);
 
     const repository = new SalesTaxLiabilitySummaryRepository();
+    const taxRateQueries = jest
+      .fn()
+      .mockReturnValueOnce(taxRatesQuery)
+      .mockReturnValueOnce(groupsQuery);
     (repository as any).taxRateModel = jest.fn(() => ({
-      query: () => taxRatesQuery,
+      query: taxRateQueries,
     }));
     (repository as any).accountModel = jest.fn(() => ({
       query: () => accountsQuery,
@@ -66,6 +79,8 @@ describe('SalesTaxLiabilitySummaryRepository', () => {
 
     return {
       repository,
+      taxRatesQuery,
+      groupsQuery,
       payableQuery,
       salesQuery,
       salesPayableQuery,
@@ -136,5 +151,24 @@ describe('SalesTaxLiabilitySummaryRepository', () => {
     );
     expect(repository.salesTaxesPayableByTaxRateId[1].credit).toBe(100);
     expect(repository.purchaseTaxesPayableByTaxRateId[1].debit).toBe(40);
+  });
+
+  it('retrieves the non-group tax rates only', async () => {
+    const { repository, taxRatesQuery } = setup();
+
+    await repository.load(filter);
+
+    expect(taxRatesQuery.where).toHaveBeenCalledWith('is_group', false);
+    expect(taxRatesQuery.orderBy).toHaveBeenCalledWith('name', 'desc');
+  });
+
+  it('maps each tax group to its component ids', async () => {
+    const { repository, groupsQuery } = setup();
+
+    await repository.load(filter);
+
+    expect(groupsQuery.where).toHaveBeenCalledWith('is_group', true);
+    expect(groupsQuery.withGraphFetched).toHaveBeenCalledWith('components');
+    expect(repository.taxGroupComponentIds).toEqual({ 9: [1, 2] });
   });
 });

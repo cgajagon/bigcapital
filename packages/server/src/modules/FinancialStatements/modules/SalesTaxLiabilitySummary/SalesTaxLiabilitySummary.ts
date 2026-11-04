@@ -44,6 +44,24 @@ export class SalesTaxLiabilitySummary extends FinancialSheet {
   }
 
   /**
+   * Retrieves the taxable sales of a rate: its own sales plus the sales of
+   * every tax group containing it (group lines are tagged with the group id).
+   * @param {number} taxRateId
+   * @returns {number}
+   */
+  private taxableSalesAmount = (taxRateId: number): number => {
+    const groups = this.repository.taxGroupComponentIds ?? {};
+    const groupIds = Object.keys(groups)
+      .map(Number)
+      .filter((groupId) => groups[groupId].includes(taxRateId));
+
+    return [taxRateId, ...groupIds].reduce((sum, id) => {
+      const sales = this.repository.accountTransactionsByTaxRateId[id];
+      return sum + (sales ? sales.credit - sales.debit : 0);
+    }, 0);
+  };
+
+  /**
    * Retrieves the tax rate liability node.
    * @param {ITaxRate} taxRate
    * @returns {SalesTaxLiabilitySummaryRate}
@@ -52,7 +70,6 @@ export class SalesTaxLiabilitySummary extends FinancialSheet {
     taxRate: ModelObject<TaxRateModel>,
   ): SalesTaxLiabilitySummaryRate => {
     const payableTax = this.repository.taxesPayableByTaxRateId[taxRate.id];
-    const salesTax = this.repository.accountTransactionsByTaxRateId[taxRate.id];
     const salesPayable =
       this.repository.salesTaxesPayableByTaxRateId[taxRate.id];
     const purchasePayable =
@@ -61,7 +78,7 @@ export class SalesTaxLiabilitySummary extends FinancialSheet {
     const payableTaxAmount = payableTax
       ? payableTax.credit - payableTax.debit
       : 0;
-    const salesTaxAmount = salesTax ? salesTax.credit - salesTax.debit : 0;
+    const salesTaxAmount = this.taxableSalesAmount(taxRate.id);
 
     // Calculates the tax percentage.
     const taxPercentage = this.getPercentageBasis(
@@ -101,7 +118,12 @@ export class SalesTaxLiabilitySummary extends FinancialSheet {
       const salesTrxs = this.repository.accountTransactionsByTaxRateId[node.id];
       const payableTrxs = this.repository.taxesPayableByTaxRateId[node.id];
 
-      return !isEmpty(salesTrxs) || !isEmpty(payableTrxs);
+      // Sales may reach the rate only through a group containing it.
+      return (
+        !isEmpty(salesTrxs) ||
+        !isEmpty(payableTrxs) ||
+        node.taxableAmount.amount !== 0
+      );
     });
   };
 

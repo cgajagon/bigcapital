@@ -19,14 +19,19 @@ const createSummary = ({
   sales = {},
   salesPayable = {},
   purchasePayable = {},
+  taxRates = [{ id: 1, name: 'Tax', rate: 10 }],
+  taxGroupComponentIds = {},
 }: {
+  taxRates?: Array<{ id: number; name: string; rate: number }>;
+  taxGroupComponentIds?: Record<number, number[]>;
   payable?: SalesTaxLiabilitySummaryPayableById;
   sales?: SalesTaxLiabilitySummarySalesById;
   salesPayable?: SalesTaxLiabilitySummaryPayableById;
   purchasePayable?: SalesTaxLiabilitySummaryPayableById;
 }) => {
   const repository = {
-    taxRates: [{ id: 1, name: 'Tax', rate: 10 }],
+    taxRates,
+    taxGroupComponentIds,
     taxesPayableByTaxRateId: payable,
     accountTransactionsByTaxRateId: sales,
     salesTaxesPayableByTaxRateId: salesPayable,
@@ -101,5 +106,35 @@ describe('SalesTaxLiabilitySummary', () => {
     expect(taxRate.collectedTaxAmount.amount).toBe(4);
     expect(taxRate.taxAmount.amount).toBe(5);
     expect(total.taxOnSalesAmount.amount).toBe(9);
+  });
+
+  it('adds the sales of the groups containing a rate to its taxable amount', () => {
+    const summary = createSummary({
+      taxRates: [
+        { id: 1, name: 'TPS', rate: 5 },
+        { id: 2, name: 'TVQ', rate: 9.975 },
+      ],
+      taxGroupComponentIds: { 9: [1, 2] },
+      sales: {
+        1: { taxRateId: 1, credit: 100, debit: 0 },
+        9: { taxRateId: 9, credit: 33, debit: 0 },
+      },
+      salesPayable: {
+        1: { taxRateId: 1, credit: 6.65, debit: 0 },
+        2: { taxRateId: 2, credit: 3.29, debit: 0 },
+      },
+      payable: {
+        1: { taxRateId: 1, credit: 6.65, debit: 0 },
+        2: { taxRateId: 2, credit: 3.29, debit: 0 },
+      },
+    });
+
+    const { taxRates } = summary.reportData();
+
+    expect(taxRates.map((row) => row.id)).toEqual([1, 2]);
+    expect(taxRates[0].taxableAmount.amount).toBe(133);
+    expect(taxRates[0].taxOnSalesAmount.amount).toBe(6.65);
+    expect(taxRates[1].taxableAmount.amount).toBe(33);
+    expect(taxRates[1].taxOnSalesAmount.amount).toBe(3.29);
   });
 });
