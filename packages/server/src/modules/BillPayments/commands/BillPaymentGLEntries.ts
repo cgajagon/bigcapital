@@ -11,6 +11,8 @@ import { BillPaymentEntry } from '../models/BillPaymentEntry';
 import { AccountRepository } from '@/modules/Accounts/repositories/Account.repository';
 import { TenancyContext } from '@/modules/Tenancy/TenancyContext.service';
 import { TenantModelProxy } from '@/modules/System/models/TenantBaseModel';
+import { TaxRateModel } from '@/modules/TaxRates/models/TaxRate.model';
+import { loadTaxPayableAccountsByRateId } from '@/modules/TaxRates/TaxPayableAccounts';
 
 @Injectable()
 export class BillPaymentGLEntries {
@@ -29,6 +31,9 @@ export class BillPaymentGLEntries {
     private readonly billPaymentEntryModel: TenantModelProxy<
       typeof BillPaymentEntry
     >,
+
+    @Inject(TaxRateModel.name)
+    private readonly taxRateModel: TenantModelProxy<typeof TaxRateModel>,
   ) {}
 
   /**
@@ -163,6 +168,11 @@ export class BillPaymentGLEntries {
     // Find or create tax payable account.
     const taxPayableAccount =
       await this.accountRepository.findOrCreateTaxPayable({}, trx);
+    // The payable account of each tax rate that has one.
+    const taxPayableAccountsByRateId = await loadTaxPayableAccountsByRateId(
+      this.taxRateModel,
+      trx,
+    );
     // Find or create purchase discount account.
     const purchaseDiscountAccount =
       await this.accountRepository.findOrCreatePurchaseDiscountAccount({}, trx);
@@ -178,6 +188,7 @@ export class BillPaymentGLEntries {
       paidBeforeByBillId,
     )
       .setTaxPayableAccountId(taxPayableAccount.id)
+      .setTaxPayableAccountsByRateId(taxPayableAccountsByRateId)
       .setPurchaseDiscountAccountId(purchaseDiscountAccount.id)
       .setOtherExpensesAccountId(otherExpensesAccount.id);
 

@@ -1,6 +1,6 @@
 import * as moment from 'moment';
-import { defaultTo } from 'lodash';
-import { roundHalfAwayFromZero } from '@bigcapital/utils';
+import { defaultTo, sumBy } from 'lodash';
+import { roundHalfAwayFromZero, TaxComponentAmount } from '@bigcapital/utils';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { Ledger } from '@/modules/Ledger/Ledger';
 import {
@@ -8,7 +8,10 @@ import {
   LEDGER_DECIMALS,
   roundToLedgerPrecision,
 } from '@/modules/Ledger/LedgerPrecision';
-import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
+import {
+  getDocumentLineComponentTaxes,
+  getDocumentLineTaxes,
+} from '@/modules/TaxRates/utils';
 import { buildTaxLedgerEntries } from '@/modules/TaxRates/TaxLedgerEntries';
 import { AccountNormal } from '@/interfaces/Account';
 import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
@@ -26,19 +29,20 @@ import { BillPaymentEntry } from '../models/BillPaymentEntry';
  * accounts, tax payable, discount, and other charges) scaled by the paid
  * proportion of the bill.
  *
- * The tax of each line is recognized to the cent in the bill currency,
- * cumulatively: a payment posts the increase in the line tax rounded on the
- * amount paid so far, so the payments of a fully paid bill post exactly the
- * tax of the bill journal. The expense of the line carries the rest of its
- * share, and the entries of each bill are
- * rounded to the ledger precision with the remainder on the largest expense
- * entry.
+ * The tax of each line is recognized per tax rate (each component of a tax
+ * group) to the cent in the bill currency, cumulatively: a payment posts the
+ * increase in the component tax rounded on the amount paid so far, so the
+ * payments of a fully paid bill post exactly the tax entries of the bill
+ * journal. The expense of the line carries the rest of its share, and the
+ * entries of each bill are rounded to the ledger precision with the remainder
+ * on the largest expense entry.
  */
 export class BillPaymentCashGL {
   private readonly billPayment: BillPayment;
   private readonly paidBeforeByBillId: Record<number, number>;
 
   private taxPayableAccountId: number;
+  private taxPayableAccountsByRateId: Record<number, number> = {};
   private purchaseDiscountAccountId: number;
   private otherExpensesAccountId: number;
 
@@ -63,6 +67,20 @@ export class BillPaymentCashGL {
    */
   setTaxPayableAccountId(taxPayableAccountId: number) {
     this.taxPayableAccountId = taxPayableAccountId;
+    return this;
+  }
+
+  /**
+   * Sets the payable account of each tax rate that has one. A tax rate missing
+   * from the map posts to the tax payable account.
+   * @param {Record<number, number>} taxPayableAccountsByRateId - Payable
+   *   account id by tax rate id.
+   * @returns {BillPaymentCashGL}
+   */
+  setTaxPayableAccountsByRateId(
+    taxPayableAccountsByRateId: Record<number, number>,
+  ) {
+    this.taxPayableAccountsByRateId = taxPayableAccountsByRateId;
     return this;
   }
 
@@ -159,42 +177,48 @@ export class BillPaymentCashGL {
   };
 
   /**
-   * Retrieves the tax of each bill line recognized by the given payment
-   * entry, in local currency.
+   * Retrieves the tax of each bill line per tax rate (each component of a tax
+   * group) recognized by the given payment entry, in local currency.
    * The tax recognized once `x` of the bill is paid is rounded to the cent
    * in the bill currency, then converted to the ledger precision:
-   * `cum(x) = round3(round2(lineTax × x / bill total) × exchangeRate)`.
+   * `cum(x) = round3(round2(componentTax × x / bill total) × exchangeRate)`.
    * The entry posts `cum(paidBefore + paymentAmount) − cum(paidBefore)`, so
-   * the payments of a fully paid bill post `round3(lineTax × exchangeRate)`,
-   * the bill journal's tax entry.
+   * the payments of a fully paid bill post
+   * `round3(componentTax × exchangeRate)`, the bill journal's tax entry.
    * @param {Bill} bill - Bill, with a non-zero total.
-   * @param {number[]} lineTaxes - Line taxes, allocated to the stored bill tax.
+   * @param {TaxComponentAmount[][]} lineComponentTaxes - Each line's taxes per
+   *   tax rate, allocated to the stored bill tax.
    * @param {number} paidBefore - Amount of the bill paid before the entry.
    * @param {number} paymentAmount - Amount of the bill paid by the entry.
-   * @returns {number[]}
+   * @returns {TaxComponentAmount[][]} Each line's taxes per tax rate
+   *   recognized by the payment, in local currency.
    */
   private getPaymentEntryLineTaxes = (
     bill: Bill,
-    lineTaxes: number[],
+    lineComponentTaxes: TaxComponentAmount[][],
     paidBefore: number,
     paymentAmount: number,
-  ): number[] => {
+  ): TaxComponentAmount[][] => {
     const billExchangeRate = defaultTo(bill.exchangeRate, 1);
-    const cumulativeTax = (lineTax: number, paidAmount: number) =>
+    const cumulativeTax = (componentTax: number, paidAmount: number) =>
       roundHalfAwayFromZero(
-        roundHalfAwayFromZero((lineTax * paidAmount) / bill.total, 2) *
+        roundHalfAwayFromZero((componentTax * paidAmount) / bill.total, 2) *
           billExchangeRate,
         LEDGER_DECIMALS,
       );
 
-    return lineTaxes.map((lineTax) =>
-      lineTax === 0
-        ? 0
-        : roundHalfAwayFromZero(
-            cumulativeTax(lineTax, paidBefore + paymentAmount) -
-              cumulativeTax(lineTax, paidBefore),
-            LEDGER_DECIMALS,
-          ),
+    return lineComponentTaxes.map((components) =>
+      components.map((component) => ({
+        ...component,
+        amount:
+          component.amount === 0
+            ? 0
+            : roundHalfAwayFromZero(
+                cumulativeTax(component.amount, paidBefore + paymentAmount) -
+                  cumulativeTax(component.amount, paidBefore),
+                LEDGER_DECIMALS,
+              ),
+      })),
     );
   };
 
@@ -203,14 +227,15 @@ export class BillPaymentCashGL {
    * @param {Bill} bill - Bill.
    * @param {number} ratio - Paid proportion of the bill.
    * @param {number[]} lineTaxes - Line taxes, allocated to the stored bill tax.
-   * @param {number[]} paymentLineTaxes - Line taxes recognized by the payment.
+   * @param {TaxComponentAmount[][]} paymentLineComponentTaxes - Each line's
+   *   taxes per tax rate recognized by the payment.
    * @returns {ILedgerEntry[]}
    */
   private getPaymentEntryItemEntries = (
     bill: Bill,
     ratio: number,
     lineTaxes: number[],
-    paymentLineTaxes: number[],
+    paymentLineComponentTaxes: TaxComponentAmount[][],
   ): ILedgerEntry[] => {
     const billEntries = bill.entries || [];
     const billExchangeRate = defaultTo(bill.exchangeRate, 1);
@@ -222,32 +247,39 @@ export class BillPaymentCashGL {
         ratio,
         billExchangeRate,
         lineTaxes[index],
-        paymentLineTaxes[index],
+        // The line tax the payment recognizes, the sum of its components.
+        roundHalfAwayFromZero(
+          sumBy(paymentLineComponentTaxes[index], 'amount'),
+          LEDGER_DECIMALS,
+        ),
       ),
     );
   };
 
   /**
    * Retrieves the tax payable debit entries mirroring the bill taxes, one per
-   * taxed line; negative tax posts as a negative debit.
+   * taxed line and tax rate (each component of a tax group), on that tax
+   * rate's payable account; negative tax posts as a negative debit.
    * @param {Bill} bill - Bill.
-   * @param {number[]} paymentLineTaxes - Line taxes recognized by the payment.
+   * @param {TaxComponentAmount[][]} paymentLineComponentTaxes - Each line's
+   *   taxes per tax rate recognized by the payment.
    * @returns {ILedgerEntry[]}
    */
   private getPaymentEntryTaxEntries = (
     bill: Bill,
-    paymentLineTaxes: number[],
+    paymentLineComponentTaxes: TaxComponentAmount[][],
   ): ILedgerEntry[] => {
     const billEntries = bill.entries || [];
 
     return buildTaxLedgerEntries({
-      taxes: billEntries.map((item, index) => ({
-        amount: paymentLineTaxes[index],
-        taxRateId: item.taxRateId,
-        taxRate: item.taxRate,
+      taxes: paymentLineComponentTaxes.flat().map((component) => ({
+        amount: component.amount,
+        taxRateId: component.taxRateId,
+        taxRate: component.rate,
       })),
       side: 'debit',
       taxPayableAccountId: this.taxPayableAccountId,
+      payableAccountIdByTaxRateId: this.taxPayableAccountsByRateId,
       commonEntry: this.cashEntriesCommonEntry,
       indexGroup: 50,
       startIndex: billEntries.length + 2,
@@ -324,9 +356,9 @@ export class BillPaymentCashGL {
       return [];
     }
     const lineTaxes = getDocumentLineTaxes(bill);
-    const paymentLineTaxes = this.getPaymentEntryLineTaxes(
+    const paymentLineComponentTaxes = this.getPaymentEntryLineTaxes(
       bill,
-      lineTaxes,
+      getDocumentLineComponentTaxes(bill),
       paidBefore,
       entry.paymentAmount,
     );
@@ -334,7 +366,7 @@ export class BillPaymentCashGL {
       bill,
       ratio,
       lineTaxes,
-      paymentLineTaxes,
+      paymentLineComponentTaxes,
     );
     // The largest expense entry by absolute amount, the first one on a tie.
     const largestItemEntry = getLargestLedgerEntry(itemEntries, 'debit');
@@ -343,7 +375,7 @@ export class BillPaymentCashGL {
       [
         this.getPaymentEntryPaymentAccountEntry(entry),
         ...itemEntries,
-        ...this.getPaymentEntryTaxEntries(bill, paymentLineTaxes),
+        ...this.getPaymentEntryTaxEntries(bill, paymentLineComponentTaxes),
         ...this.getPaymentEntryDiscountEntry(bill, ratio),
         ...this.getPaymentEntryAdjustmentEntry(bill, ratio),
       ],
@@ -361,7 +393,8 @@ export class BillPaymentCashGL {
    * @param {number} ratio - Paid proportion of the bill.
    * @param {number} billExchangeRate - Bill exchange rate.
    * @param {number} lineTax - The line tax, allocated to the stored bill tax.
-   * @param {number} paymentLineTax - The line tax recognized by the payment.
+   * @param {number} paymentLineTax - The line tax recognized by the payment,
+   *   the sum of its components.
    * @returns {ILedgerEntry}
    */
   private getBillItemCashEntry = (

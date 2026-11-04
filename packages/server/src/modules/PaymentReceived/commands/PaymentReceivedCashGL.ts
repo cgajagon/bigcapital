@@ -1,5 +1,5 @@
-import { defaultTo } from 'lodash';
-import { roundHalfAwayFromZero } from '@bigcapital/utils';
+import { defaultTo, sumBy } from 'lodash';
+import { roundHalfAwayFromZero, TaxComponentAmount } from '@bigcapital/utils';
 import { ILedgerEntry } from '@/modules/Ledger/types/Ledger.types';
 import { Ledger } from '@/modules/Ledger/Ledger';
 import {
@@ -7,7 +7,10 @@ import {
   LEDGER_DECIMALS,
   roundToLedgerPrecision,
 } from '@/modules/Ledger/LedgerPrecision';
-import { getDocumentLineTaxes } from '@/modules/TaxRates/utils';
+import {
+  getDocumentLineComponentTaxes,
+  getDocumentLineTaxes,
+} from '@/modules/TaxRates/utils';
 import { buildTaxLedgerEntries } from '@/modules/TaxRates/TaxLedgerEntries';
 import { AccountNormal } from '@/interfaces/Account';
 import { PaymentReceived } from '../models/PaymentReceived';
@@ -24,19 +27,20 @@ import { AccountingBasis } from '@/common/types/AccountingBasis';
  * accounts, tax payable, discount, and other charges) scaled by the paid
  * proportion of the invoice.
  *
- * The tax of each line is recognized to the cent in the invoice currency,
- * cumulatively: a payment posts the increase in the line tax rounded on the
- * amount paid so far, so the payments of a fully paid invoice post exactly
- * the tax of the invoice journal. The income of the line carries the rest
- * of its share, and the entries of each invoice
- * are rounded to the ledger precision with the remainder on the largest
- * income entry.
+ * The tax of each line is recognized per tax rate (each component of a tax
+ * group) to the cent in the invoice currency, cumulatively: a payment posts
+ * the increase in the component tax rounded on the amount paid so far, so the
+ * payments of a fully paid invoice post exactly the tax entries of the invoice
+ * journal. The income of the line carries the rest of its share, and the
+ * entries of each invoice are rounded to the ledger precision with the
+ * remainder on the largest income entry.
  */
 export class PaymentReceivedCashGL {
   private readonly paymentReceived: PaymentReceived;
   private readonly paidBeforeByInvoiceId: Record<number, number>;
 
   private taxPayableAccountId: number;
+  private taxPayableAccountsByRateId: Record<number, number> = {};
   private discountAccountId: number;
   private otherChargesAccountId: number;
 
@@ -61,6 +65,20 @@ export class PaymentReceivedCashGL {
    */
   setTaxPayableAccountId(taxPayableAccountId: number) {
     this.taxPayableAccountId = taxPayableAccountId;
+    return this;
+  }
+
+  /**
+   * Sets the payable account of each tax rate that has one. A tax rate missing
+   * from the map posts to the tax payable account.
+   * @param {Record<number, number>} taxPayableAccountsByRateId - Payable
+   *   account id by tax rate id.
+   * @returns {PaymentReceivedCashGL}
+   */
+  setTaxPayableAccountsByRateId(
+    taxPayableAccountsByRateId: Record<number, number>,
+  ) {
+    this.taxPayableAccountsByRateId = taxPayableAccountsByRateId;
     return this;
   }
 
@@ -161,59 +179,67 @@ export class PaymentReceivedCashGL {
   };
 
   /**
-   * Retrieves the tax of each invoice line recognized by the given payment
-   * entry, in local currency.
+   * Retrieves the tax of each invoice line per tax rate (each component of a
+   * tax group) recognized by the given payment entry, in local currency.
    * The tax recognized once `x` of the invoice is paid is rounded to the cent
    * in the invoice currency, then converted to the ledger precision:
-   * `cum(x) = round3(round2(lineTax × x / invoice total) × exchangeRate)`.
+   * `cum(x) = round3(round2(componentTax × x / invoice total) × exchangeRate)`.
    * The entry posts `cum(paidBefore + paymentAmount) − cum(paidBefore)`, so
-   * the payments of a fully paid invoice post `round3(lineTax × exchangeRate)`,
-   * the invoice journal's tax entry.
+   * the payments of a fully paid invoice post
+   * `round3(componentTax × exchangeRate)`, the invoice journal's tax entry.
    * @param {SaleInvoice} invoice - Sale invoice, with a non-zero total.
-   * @param {number[]} lineTaxes - Line taxes, allocated to the stored invoice tax.
+   * @param {TaxComponentAmount[][]} lineComponentTaxes - Each line's taxes per
+   *   tax rate, allocated to the stored invoice tax.
    * @param {number} paidBefore - Amount of the invoice paid before the entry.
    * @param {number} paymentAmount - Amount of the invoice paid by the entry.
-   * @returns {number[]}
+   * @returns {TaxComponentAmount[][]} Each line's taxes per tax rate
+   *   recognized by the payment, in local currency.
    */
   private getPaymentEntryLineTaxes = (
     invoice: SaleInvoice,
-    lineTaxes: number[],
+    lineComponentTaxes: TaxComponentAmount[][],
     paidBefore: number,
     paymentAmount: number,
-  ): number[] => {
-    const cumulativeTax = (lineTax: number, paidAmount: number) =>
+  ): TaxComponentAmount[][] => {
+    const cumulativeTax = (componentTax: number, paidAmount: number) =>
       roundHalfAwayFromZero(
-        roundHalfAwayFromZero((lineTax * paidAmount) / invoice.total, 2) *
+        roundHalfAwayFromZero((componentTax * paidAmount) / invoice.total, 2) *
           defaultTo(invoice.exchangeRate, 1),
         LEDGER_DECIMALS,
       );
 
-    return lineTaxes.map((lineTax) =>
-      lineTax === 0
-        ? 0
-        : roundHalfAwayFromZero(
-            cumulativeTax(lineTax, paidBefore + paymentAmount) -
-              cumulativeTax(lineTax, paidBefore),
-            LEDGER_DECIMALS,
-          ),
+    return lineComponentTaxes.map((components) =>
+      components.map((component) => ({
+        ...component,
+        amount:
+          component.amount === 0
+            ? 0
+            : roundHalfAwayFromZero(
+                cumulativeTax(component.amount, paidBefore + paymentAmount) -
+                  cumulativeTax(component.amount, paidBefore),
+                LEDGER_DECIMALS,
+              ),
+      })),
     );
   };
 
   /**
    * Retrieves the income accounts credit entries mirroring the invoice items.
    * Each line's share of the payment is its income plus its tax; the income
-   * entry carries the share less the tax the payment recognizes on the line.
+   * entry carries the share less the tax the payment recognizes on the line,
+   * the sum of its components.
    * @param {SaleInvoice} invoice - Sale invoice.
    * @param {number} ratio - Paid proportion of the invoice.
    * @param {number[]} lineTaxes - Line taxes, allocated to the stored invoice tax.
-   * @param {number[]} paymentLineTaxes - Line taxes recognized by the payment.
+   * @param {TaxComponentAmount[][]} paymentLineComponentTaxes - Each line's
+   *   taxes per tax rate recognized by the payment.
    * @returns {ILedgerEntry[]}
    */
   private getPaymentEntryIncomeEntries = (
     invoice: SaleInvoice,
     ratio: number,
     lineTaxes: number[],
-    paymentLineTaxes: number[],
+    paymentLineComponentTaxes: TaxComponentAmount[][],
   ): ILedgerEntry[] => {
     const invoiceEntries = invoice.entries || [];
 
@@ -222,11 +248,14 @@ export class PaymentReceivedCashGL {
       const lineTotal =
         item.totalExcludingTax +
         (item.isInclusiveTax ? item.taxAmount : lineTaxes[index]);
+      const paymentLineTax = roundHalfAwayFromZero(
+        sumBy(paymentLineComponentTaxes[index], 'amount'),
+        LEDGER_DECIMALS,
+      );
 
       return {
         ...this.cashEntriesCommonEntry,
-        credit:
-          lineTotal * invoice.exchangeRate * ratio - paymentLineTaxes[index],
+        credit: lineTotal * invoice.exchangeRate * ratio - paymentLineTax,
         accountId: item.sellAccountId,
         note: item.description,
         index: index + 2,
@@ -239,26 +268,29 @@ export class PaymentReceivedCashGL {
   };
 
   /**
-   * Retrieves the tax payable credit entries mirroring the invoice taxes,
-   * one per taxed line; negative tax posts as a negative credit.
+   * Retrieves the tax payable credit entries mirroring the invoice taxes, one
+   * per taxed line and tax rate (each component of a tax group), on that tax
+   * rate's payable account; negative tax posts as a negative credit.
    * @param {SaleInvoice} invoice - Sale invoice.
-   * @param {number[]} paymentLineTaxes - Line taxes recognized by the payment.
+   * @param {TaxComponentAmount[][]} paymentLineComponentTaxes - Each line's
+   *   taxes per tax rate recognized by the payment.
    * @returns {ILedgerEntry[]}
    */
   private getPaymentEntryTaxEntries = (
     invoice: SaleInvoice,
-    paymentLineTaxes: number[],
+    paymentLineComponentTaxes: TaxComponentAmount[][],
   ): ILedgerEntry[] => {
     const invoiceEntries = invoice.entries || [];
 
     return buildTaxLedgerEntries({
-      taxes: invoiceEntries.map((item, index) => ({
-        amount: paymentLineTaxes[index],
-        taxRateId: item.taxRateId,
-        taxRate: item.taxRate,
+      taxes: paymentLineComponentTaxes.flat().map((component) => ({
+        amount: component.amount,
+        taxRateId: component.taxRateId,
+        taxRate: component.rate,
       })),
       side: 'credit',
       taxPayableAccountId: this.taxPayableAccountId,
+      payableAccountIdByTaxRateId: this.taxPayableAccountsByRateId,
       commonEntry: this.cashEntriesCommonEntry,
       indexGroup: 50,
       startIndex: invoiceEntries.length + 2,
@@ -335,9 +367,9 @@ export class PaymentReceivedCashGL {
       return [];
     }
     const lineTaxes = getDocumentLineTaxes(invoice);
-    const paymentLineTaxes = this.getPaymentEntryLineTaxes(
+    const paymentLineComponentTaxes = this.getPaymentEntryLineTaxes(
       invoice,
-      lineTaxes,
+      getDocumentLineComponentTaxes(invoice),
       paidBefore,
       entry.paymentAmount,
     );
@@ -345,7 +377,7 @@ export class PaymentReceivedCashGL {
       invoice,
       ratio,
       lineTaxes,
-      paymentLineTaxes,
+      paymentLineComponentTaxes,
     );
     // The largest income entry by absolute amount, the first one on a tie.
     const largestIncomeEntry = getLargestLedgerEntry(incomeEntries, 'credit');
@@ -354,7 +386,7 @@ export class PaymentReceivedCashGL {
       [
         this.getPaymentEntryDepositEntry(entry),
         ...incomeEntries,
-        ...this.getPaymentEntryTaxEntries(invoice, paymentLineTaxes),
+        ...this.getPaymentEntryTaxEntries(invoice, paymentLineComponentTaxes),
         ...this.getPaymentEntryDiscountEntry(invoice, ratio),
         ...this.getPaymentEntryAdjustmentEntry(invoice, ratio),
       ],

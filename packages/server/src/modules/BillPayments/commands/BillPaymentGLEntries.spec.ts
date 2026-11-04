@@ -3,6 +3,8 @@ import { knexSnakeCaseMappers, QueryBuilder } from 'objection';
 import { BillPaymentGLEntries } from './BillPaymentGLEntries';
 import { BillPayment } from '../models/BillPayment';
 import { BillPaymentEntry } from '../models/BillPaymentEntry';
+import { DiscountType } from '@/common/types/Discount';
+import { Bill } from '@/modules/Bills/models/Bill';
 
 describe('BillPaymentGLEntries.getBillsPaidBefore', () => {
   let tenantKnex: Knex;
@@ -37,6 +39,7 @@ describe('BillPaymentGLEntries.getBillsPaidBefore', () => {
       () => BillPayment.bindKnex(tenantKnex),
       {} as any,
       () => BillPaymentEntry.bindKnex(tenantKnex),
+      {} as any,
     );
 
   it('sums the payments of each bill with a lower id, whatever their dates', async () => {
@@ -70,5 +73,106 @@ describe('BillPaymentGLEntries.getBillsPaidBefore', () => {
 
     expect(paidBefore).toEqual({});
     expect(executed).toHaveLength(0);
+  });
+});
+
+describe('BillPaymentGLEntries.getBillPaymentGLedger', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("debits each tax group component on its tax's payable account, loaded in the transaction", async () => {
+    const trx = {} as Knex.Transaction;
+    // The tax rates with a payable account: TPS (id 1) and TVQ (id 2).
+    const taxRateQuery = {
+      select: jest.fn().mockReturnThis(),
+      whereNotNull: jest.fn().mockResolvedValue([
+        { id: 1, payableAccountId: 2101 },
+        { id: 2, payableAccountId: 2102 },
+      ]),
+    };
+    const taxRateModel = { query: jest.fn().mockReturnValue(taxRateQuery) };
+    const accountRepository = {
+      findOrCreateAccountsPayable: jest.fn().mockResolvedValue({ id: 50 }),
+      findOrCreateTaxPayable: jest.fn().mockResolvedValue({ id: 1 }),
+      findOrCreatePurchaseDiscountAccount: jest
+        .fn()
+        .mockResolvedValue({ id: 2 }),
+      findOrCreateOtherExpensesAccount: jest.fn().mockResolvedValue({ id: 3 }),
+    };
+    // The exchange gain or loss account.
+    const accountModel = () => ({
+      query: () => ({
+        modify: () => ({ first: () => Promise.resolve({ id: 60 }) }),
+      }),
+    });
+    const service = new BillPaymentGLEntries(
+      {} as any,
+      accountRepository as any,
+      {} as any,
+      {} as any,
+      accountModel as any,
+      {} as any,
+      () => taxRateModel as any,
+    );
+    jest.spyOn(service, 'getBillsPaidBefore').mockResolvedValue({});
+
+    // 100 on the TPS + TVQ group (id 9): TPS 5.00, TVQ 9.98, total 114.98.
+    const bill = Bill.fromJson({
+      id: 20,
+      exchangeRate: 1,
+      amount: 100,
+      discount: 0,
+      discountType: DiscountType.Amount,
+      adjustment: 0,
+      isInclusiveTax: false,
+      taxAmountWithheld: 14.98,
+      entries: [
+        {
+          index: 1,
+          itemId: 10,
+          quantity: 1,
+          rate: 100,
+          costAccountId: 200,
+          discount: 0,
+          discountType: DiscountType.Amount,
+          taxRateId: 9,
+          taxRate: 14.975,
+          taxComponents: [
+            { taxRateId: 1, rate: 5 },
+            { taxRateId: 2, rate: 9.975 },
+          ],
+          isInclusiveTax: false,
+          item: { type: 'service' },
+        },
+      ],
+    });
+    const payment = {
+      id: 7,
+      currencyCode: 'CAD',
+      exchangeRate: 1,
+      paymentAccountId: 900,
+      paymentDate: '2026-11-03',
+      entries: [{ billId: 20, paymentAmount: 114.98, bill }],
+    } as unknown as BillPayment;
+
+    const ledger = await service.getBillPaymentGLedger(payment, 'CAD', trx);
+
+    expect(taxRateModel.query).toHaveBeenCalledWith(trx);
+    expect(taxRateQuery.whereNotNull).toHaveBeenCalledWith('payableAccountId');
+    expect(
+      ledger
+        .getEntries()
+        .filter((entry) => [1, 2101, 2102].includes(entry.accountId))
+        .map(({ debit, accountId, taxRateId, basis }) => [
+          debit,
+          accountId,
+          taxRateId,
+          basis,
+        ]),
+    ).toEqual([
+      [5, 2101, 1, 'cash'],
+      [9.98, 2102, 2, 'cash'],
+    ]);
   });
 });

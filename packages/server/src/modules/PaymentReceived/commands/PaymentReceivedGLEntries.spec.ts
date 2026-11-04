@@ -3,6 +3,8 @@ import { knexSnakeCaseMappers, QueryBuilder } from 'objection';
 import { PaymentReceivedGLEntries } from './PaymentReceivedGLEntries';
 import { PaymentReceived } from '../models/PaymentReceived';
 import { PaymentReceivedEntry } from '../models/PaymentReceivedEntry';
+import { DiscountType } from '@/common/types/Discount';
+import { SaleInvoice } from '@/modules/SaleInvoices/models/SaleInvoice';
 
 describe('PaymentReceivedGLEntries.getInvoicesPaidBefore', () => {
   let tenantKnex: Knex;
@@ -37,6 +39,7 @@ describe('PaymentReceivedGLEntries.getInvoicesPaidBefore', () => {
       {} as any,
       () => PaymentReceived.bindKnex(tenantKnex),
       () => PaymentReceivedEntry.bindKnex(tenantKnex),
+      {} as any,
     );
 
   it('sums the payments of each invoice with a lower id, whatever their dates', async () => {
@@ -70,5 +73,93 @@ describe('PaymentReceivedGLEntries.getInvoicesPaidBefore', () => {
 
     expect(paidBefore).toEqual({});
     expect(executed).toHaveLength(0);
+  });
+});
+
+describe('PaymentReceivedGLEntries.getPaymentReceiveCashLedger', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("posts each tax group component on its tax's payable account, loaded in the transaction", async () => {
+    const trx = {} as Knex.Transaction;
+    // The tax rates with a payable account: TPS (id 1) and TVQ (id 2).
+    const taxRateQuery = {
+      select: jest.fn().mockReturnThis(),
+      whereNotNull: jest.fn().mockResolvedValue([
+        { id: 1, payableAccountId: 2101 },
+        { id: 2, payableAccountId: 2102 },
+      ]),
+    };
+    const taxRateModel = { query: jest.fn().mockReturnValue(taxRateQuery) };
+    const accountRepository = {
+      findOrCreateTaxPayable: jest.fn().mockResolvedValue({ id: 200 }),
+      findOrCreateDiscountAccount: jest.fn().mockResolvedValue({ id: 300 }),
+      findOrCreateOtherChargesAccount: jest.fn().mockResolvedValue({ id: 400 }),
+    };
+    const service = new PaymentReceivedGLEntries(
+      {} as any,
+      accountRepository as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      () => taxRateModel as any,
+    );
+    jest.spyOn(service, 'getInvoicesPaidBefore').mockResolvedValue({});
+
+    // 100 on the TPS + TVQ group (id 9): TPS 5.00, TVQ 9.98, total 114.98.
+    const invoice = SaleInvoice.fromJson({
+      id: 10,
+      exchangeRate: 1,
+      balance: 100,
+      discount: 0,
+      discountType: DiscountType.Amount,
+      adjustment: 0,
+      isInclusiveTax: false,
+      taxAmountWithheld: 14.98,
+      entries: [
+        {
+          index: 1,
+          itemId: 1,
+          sellAccountId: 500,
+          quantity: 1,
+          rate: 100,
+          discount: 0,
+          discountType: DiscountType.Amount,
+          taxRateId: 9,
+          taxRate: 14.975,
+          taxComponents: [
+            { taxRateId: 1, rate: 5 },
+            { taxRateId: 2, rate: 9.975 },
+          ],
+          isInclusiveTax: false,
+        },
+      ],
+    });
+    const payment = {
+      id: 7,
+      exchangeRate: 1,
+      depositAccountId: 100,
+      entries: [{ invoiceId: 10, paymentAmount: 114.98, invoice }],
+    } as unknown as PaymentReceived;
+
+    const ledger = await service.getPaymentReceiveCashLedger(payment, trx);
+
+    expect(taxRateModel.query).toHaveBeenCalledWith(trx);
+    expect(taxRateQuery.whereNotNull).toHaveBeenCalledWith('payableAccountId');
+    expect(
+      ledger
+        .getEntries()
+        .filter((entry) => [200, 2101, 2102].includes(entry.accountId))
+        .map(({ credit, accountId, taxRateId }) => [
+          credit,
+          accountId,
+          taxRateId,
+        ]),
+    ).toEqual([
+      [5, 2101, 1],
+      [9.98, 2102, 2],
+    ]);
   });
 });

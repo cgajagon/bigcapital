@@ -349,3 +349,262 @@ describe('BillPaymentCashGL tax rounding', () => {
     expect(rebuilt).toEqual(posted);
   });
 });
+
+describe('BillPaymentCashGL tax groups', () => {
+  const PAYMENT_ACCOUNT = 900;
+  const TAX_PAYABLE_ACCOUNT = 1;
+  const EXPENSE_ACCOUNT = 200;
+  const TPS_PAYABLE_ACCOUNT = 2101;
+  const TVQ_PAYABLE_ACCOUNT = 2102;
+
+  // TPS (id 1) and TVQ (id 2), the components of the group id 9.
+  const TPS = { taxRateId: 1, rate: 5 };
+  const TVQ = { taxRateId: 2, rate: 9.975 };
+  const PAYABLE_ACCOUNTS_BY_RATE_ID = {
+    1: TPS_PAYABLE_ACCOUNT,
+    2: TVQ_PAYABLE_ACCOUNT,
+  };
+
+  // A real bill model whose lines are on the group, so its total and
+  // component taxes are derived as saved.
+  const buildGroupBill = (
+    amounts: number[],
+    overrides: Record<string, any> = {},
+  ): Bill =>
+    Bill.fromJson({
+      id: 20,
+      billNumber: 'B-100',
+      currencyCode: 'CAD',
+      exchangeRate: 1,
+      amount: amounts.reduce((total, amount) => total + amount, 0),
+      discount: 0,
+      discountType: DiscountType.Amount,
+      adjustment: 0,
+      isInclusiveTax: false,
+      entries: amounts.map((amount, index) => ({
+        index: index + 1,
+        itemId: 10,
+        quantity: 1,
+        rate: amount,
+        costAccountId: EXPENSE_ACCOUNT,
+        discount: 0,
+        discountType: DiscountType.Amount,
+        taxRateId: 9,
+        taxRate: 14.975,
+        taxComponents: [TPS, TVQ],
+        isInclusiveTax: false,
+        item: { type: 'service' },
+      })),
+      ...overrides,
+    });
+
+  // Group lines 37.50 and -4.50: TPS 1.88 and -0.23, TVQ 3.74 and -0.45,
+  // total 37.94 (Task 6's bill).
+  const buildTask6Bill = (overrides: Record<string, any> = {}) =>
+    buildGroupBill([37.5, -4.5], { taxAmountWithheld: 4.94, ...overrides });
+
+  // The cash basis legs of a payment of `paymentAmount` on the bill, when
+  // earlier payments paid `paidBefore` of it; without the map when it is null.
+  const payBill = (
+    bill: Bill,
+    paymentAmount: number,
+    paidBefore: number,
+    payableAccountsByRateId: Record<
+      number,
+      number
+    > | null = PAYABLE_ACCOUNTS_BY_RATE_ID,
+  ): ILedgerEntry[] => {
+    const cashGL = new BillPaymentCashGL(
+      buildBillPayment({
+        exchangeRate: bill.exchangeRate,
+        entries: [{ billId: bill.id, paymentAmount, bill }],
+      }) as any,
+      { [bill.id]: paidBefore },
+    )
+      .setTaxPayableAccountId(TAX_PAYABLE_ACCOUNT)
+      .setPurchaseDiscountAccountId(2)
+      .setOtherExpensesAccountId(3);
+
+    if (payableAccountsByRateId) {
+      cashGL.setTaxPayableAccountsByRateId(payableAccountsByRateId);
+    }
+    return cashGL.getLedger().getEntries();
+  };
+
+  const TAX_ACCOUNTS = [
+    TAX_PAYABLE_ACCOUNT,
+    TPS_PAYABLE_ACCOUNT,
+    TVQ_PAYABLE_ACCOUNT,
+  ];
+  const isTaxLeg = (leg: ILedgerEntry) => TAX_ACCOUNTS.includes(leg.accountId);
+  const taxLegs = (legs: ILedgerEntry[]) =>
+    legs.filter(isTaxLeg).map(({ debit, accountId, taxRateId, taxRate }) => ({
+      debit,
+      accountId,
+      taxRateId,
+      taxRate,
+    }));
+  const debits = (legs: ILedgerEntry[], accountId: number) =>
+    legs.filter((leg) => leg.accountId === accountId).map((leg) => leg.debit);
+  const expense = (legs: ILedgerEntry[]) => debits(legs, EXPENSE_ACCOUNT);
+  const sum = (amounts: number[]) =>
+    roundHalfAwayFromZero(
+      amounts.reduce((total, amount) => total + amount, 0),
+      3,
+    );
+
+  // Σdebit and Σcredit agree in thousandths, the precision of accounts_transactions.
+  const balanced = (legs: ILedgerEntry[]) =>
+    Math.round(
+      legs.reduce((total, leg) => total + (leg.debit || 0), 0) * 1000,
+    ) ===
+    Math.round(
+      legs.reduce((total, leg) => total + (leg.credit || 0), 0) * 1000,
+    );
+
+  // Every leg is already at the stored precision, so the database stores it as is.
+  const atStoredPrecision = (legs: ILedgerEntry[]) =>
+    legs.every(
+      (leg) =>
+        roundHalfAwayFromZero(leg.debit || 0, 3) === (leg.debit || 0) &&
+        roundHalfAwayFromZero(leg.credit || 0, 3) === (leg.credit || 0),
+    );
+
+  it("debits each component of a full payment to its tax's payable account", () => {
+    const legs = payBill(buildTask6Bill(), 37.94, 0);
+
+    expect(taxLegs(legs)).toEqual([
+      {
+        debit: 1.88,
+        accountId: TPS_PAYABLE_ACCOUNT,
+        taxRateId: 1,
+        taxRate: 5,
+      },
+      {
+        debit: 3.74,
+        accountId: TVQ_PAYABLE_ACCOUNT,
+        taxRateId: 2,
+        taxRate: 9.975,
+      },
+      {
+        debit: -0.23,
+        accountId: TPS_PAYABLE_ACCOUNT,
+        taxRateId: 1,
+        taxRate: 5,
+      },
+      {
+        debit: -0.45,
+        accountId: TVQ_PAYABLE_ACCOUNT,
+        taxRateId: 2,
+        taxRate: 9.975,
+      },
+    ]);
+    expect(legs.find((leg) => leg.accountId === PAYMENT_ACCOUNT).credit).toBe(
+      37.94,
+    );
+    expect(expense(legs)).toEqual([37.5, -4.5]);
+    expect(balanced(legs)).toBe(true);
+    expect(atStoredPrecision(legs)).toBe(true);
+  });
+
+  it('debits exactly each component of the bill over two payments, each journal balanced', () => {
+    const bill = buildTask6Bill();
+
+    const payments = [payBill(bill, 12, 0), payBill(bill, 25.94, 12)];
+    const tps = payments.map((legs) => debits(legs, TPS_PAYABLE_ACCOUNT));
+    const tvq = payments.map((legs) => debits(legs, TVQ_PAYABLE_ACCOUNT));
+
+    // cum(12) = round2(component × 12 / 37.94); the second payment posts the rest.
+    expect(tps).toEqual([
+      [0.59, -0.07],
+      [1.29, -0.16],
+    ]);
+    expect(tvq).toEqual([
+      [1.18, -0.14],
+      [2.56, -0.31],
+    ]);
+    expect(sum(tps.flat())).toBe(1.65);
+    expect(sum(tvq.flat())).toBe(3.29);
+    // Each line's share less the sum of its components the payment recognizes.
+    expect(payments.map(expense)).toEqual([
+      [11.868, -1.428],
+      [25.632, -3.072],
+    ]);
+    payments.forEach((legs) => {
+      expect(taxLegs(legs).map((leg) => leg.taxRateId)).toEqual([1, 2, 1, 2]);
+      expect(balanced(legs)).toBe(true);
+      expect(atStoredPrecision(legs)).toBe(true);
+    });
+  });
+
+  it("debits each component's accrual tax over two payments at exchange rate 1.3567", () => {
+    const bill = buildTask6Bill({ exchangeRate: 1.3567 });
+    const accrualLegs = new BillGL(bill)
+      .setTaxPayableAccountId(TAX_PAYABLE_ACCOUNT)
+      .setTaxPayableAccountsByRateId(PAYABLE_ACCOUNTS_BY_RATE_ID)
+      .getBillLedger()
+      .getEntries();
+
+    const payments = [payBill(bill, 12, 0), payBill(bill, 25.94, 12)];
+    const paidTax = (accountId: number) =>
+      sum(payments.flatMap((legs) => debits(legs, accountId)));
+
+    expect(payments.map((legs) => debits(legs, TPS_PAYABLE_ACCOUNT))).toEqual([
+      [0.8, -0.095],
+      [1.751, -0.217],
+    ]);
+    expect(payments.map((legs) => debits(legs, TVQ_PAYABLE_ACCOUNT))).toEqual([
+      [1.601, -0.19],
+      [3.473, -0.421],
+    ]);
+    // round3(1.88 × 1.3567) + round3(-0.23 × 1.3567), and the same for TVQ.
+    expect(paidTax(TPS_PAYABLE_ACCOUNT)).toBe(2.239);
+    expect(paidTax(TVQ_PAYABLE_ACCOUNT)).toBe(4.463);
+    expect(paidTax(TPS_PAYABLE_ACCOUNT)).toBe(
+      sum(debits(accrualLegs, TPS_PAYABLE_ACCOUNT)),
+    );
+    expect(paidTax(TVQ_PAYABLE_ACCOUNT)).toBe(
+      sum(debits(accrualLegs, TVQ_PAYABLE_ACCOUNT)),
+    );
+    payments.forEach((legs) => {
+      expect(balanced(legs)).toBe(true);
+      expect(atStoredPrecision(legs)).toBe(true);
+    });
+  });
+
+  it('posts no entries and no NaN for a zero-total group bill', () => {
+    // 3 and -3 on the group: TPS 0.15 and -0.15, TVQ 0.30 and -0.30, total 0.
+    const bill = buildGroupBill([3, -3], { taxAmountWithheld: 0 });
+
+    expect(bill.total).toBe(0);
+    [0, 5].forEach((paymentAmount) => {
+      expect(payBill(bill, paymentAmount, 0)).toEqual([]);
+    });
+  });
+
+  it('debits every component to the default tax payable account without the map', () => {
+    const legs = payBill(buildTask6Bill(), 37.94, 0, null);
+
+    expect(
+      taxLegs(legs).map(({ debit, accountId, taxRateId }) => [
+        debit,
+        accountId,
+        taxRateId,
+      ]),
+    ).toEqual([
+      [1.88, TAX_PAYABLE_ACCOUNT, 1],
+      [3.74, TAX_PAYABLE_ACCOUNT, 2],
+      [-0.23, TAX_PAYABLE_ACCOUNT, 1],
+      [-0.45, TAX_PAYABLE_ACCOUNT, 2],
+    ]);
+    expect(balanced(legs)).toBe(true);
+  });
+
+  it('gives every component tax entry its own index after the expense entries', () => {
+    const legs = payBill(buildTask6Bill(), 37.94, 0);
+
+    // Payment 1, expenses 2 and 3, then one tax entry per line and component.
+    expect(legs.map((leg) => leg.index)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(legs.filter(isTaxLeg).map((leg) => leg.index)).toEqual([4, 5, 6, 7]);
+  });
+});

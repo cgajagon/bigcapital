@@ -13,6 +13,8 @@ import { Inject } from '@nestjs/common';
 import { TenancyContext } from '@/modules/Tenancy/TenancyContext.service';
 import { Account } from '@/modules/Accounts/models/Account.model';
 import { TenantModelProxy } from '@/modules/System/models/TenantBaseModel';
+import { TaxRateModel } from '@/modules/TaxRates/models/TaxRate.model';
+import { loadTaxPayableAccountsByRateId } from '@/modules/TaxRates/TaxPayableAccounts';
 
 @Injectable()
 export class PaymentReceivedGLEntries {
@@ -31,6 +33,9 @@ export class PaymentReceivedGLEntries {
     private readonly paymentReceivedEntryModel: TenantModelProxy<
       typeof PaymentReceivedEntry
     >,
+
+    @Inject(TaxRateModel.name)
+    private readonly taxRateModel: TenantModelProxy<typeof TaxRateModel>,
   ) {}
 
   /**
@@ -180,6 +185,11 @@ export class PaymentReceivedGLEntries {
     // Find or create the tax payable account.
     const taxPayableAccount =
       await this.accountRepository.findOrCreateTaxPayable({}, trx);
+    // The payable account of each tax rate that has one.
+    const taxPayableAccountsByRateId = await loadTaxPayableAccountsByRateId(
+      this.taxRateModel,
+      trx,
+    );
     // Find or create the discount expense account.
     const discountAccount =
       await this.accountRepository.findOrCreateDiscountAccount({}, trx);
@@ -197,6 +207,7 @@ export class PaymentReceivedGLEntries {
       paidBeforeByInvoiceId,
     )
       .setTaxPayableAccountId(taxPayableAccount.id)
+      .setTaxPayableAccountsByRateId(taxPayableAccountsByRateId)
       .setDiscountAccountId(discountAccount.id)
       .setOtherChargesAccountId(otherChargesAccount.id);
 
