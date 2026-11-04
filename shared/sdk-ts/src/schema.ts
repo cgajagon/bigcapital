@@ -7954,6 +7954,28 @@ export interface components {
         };
         LinkAttachmentDto: Record<string, never>;
         UnlinkAttachmentDto: Record<string, never>;
+        TaxRateComponentResponseDto: {
+            /**
+             * @description The unique identifier of the component tax rate
+             * @example 1
+             */
+            id: number;
+            /**
+             * @description The name of the component tax rate
+             * @example TPS
+             */
+            name: string;
+            /**
+             * @description The code of the component tax rate
+             * @example TPS
+             */
+            code: string;
+            /**
+             * @description The current rate of the component tax rate
+             * @example 5
+             */
+            rate: number;
+        };
         TaxRateResponseDto: {
             /**
              * @description The unique identifier of the tax rate
@@ -8006,6 +8028,23 @@ export interface components {
              */
             active: boolean;
             /**
+             * @description Whether the tax rate is a group of component rates; a group's rate is the sum of its components' rates
+             * @example false
+             */
+            isGroup: boolean;
+            /**
+             * @description The tax payable account the rate posts to; null posts to the default Tax Payable account
+             * @example null
+             */
+            payableAccountId: number | null;
+            /** @description The component tax rates of a group, in order; empty for a plain rate */
+            components: components["schemas"]["TaxRateComponentResponseDto"][];
+            /**
+             * @description Whether a document line, tax transaction, ledger entry or item default uses the tax rate; a used group's components and a used rate's payable account can't change
+             * @example false
+             */
+            isUsed: boolean;
+            /**
              * Format: date-time
              * @description The date when the tax rate was created
              * @example 2024-03-20T10:00:00Z
@@ -8030,10 +8069,10 @@ export interface components {
              */
             code: string;
             /**
-             * @description The rate of the tax rate.
+             * @description The rate of the tax rate. Required for a plain rate; ignored for a group, whose rate is the sum of its components' rates.
              * @example 10
              */
-            rate: number;
+            rate?: number;
             /**
              * @description The description of the tax rate.
              * @example VAT
@@ -8054,6 +8093,24 @@ export interface components {
              * @example false
              */
             active: boolean;
+            /**
+             * @description Whether the tax rate is a group of component rates. Set on creation; a rate never changes between plain and group.
+             * @example false
+             */
+            isGroup?: boolean;
+            /**
+             * @description The ids of the component tax rates of a group, in the order they are shown and posted. At least two distinct, active, non-group rates.
+             * @example [
+             *       1,
+             *       2
+             *     ]
+             */
+            componentIds?: number[];
+            /**
+             * @description The tax payable account the rate posts to. Null posts to the default Tax Payable account.
+             * @example 1
+             */
+            payableAccountId?: number | null;
         };
         EditTaxRateDto: {
             /**
@@ -8067,10 +8124,10 @@ export interface components {
              */
             code: string;
             /**
-             * @description The rate of the tax rate.
+             * @description The rate of the tax rate. Required for a plain rate; ignored for a group, whose rate is the sum of its components' rates.
              * @example 10
              */
-            rate: number;
+            rate?: number;
             /**
              * @description The description of the tax rate.
              * @example VAT
@@ -8091,6 +8148,24 @@ export interface components {
              * @example false
              */
             active: boolean;
+            /**
+             * @description Whether the tax rate is a group of component rates. Set on creation; a rate never changes between plain and group.
+             * @example false
+             */
+            isGroup?: boolean;
+            /**
+             * @description The ids of the component tax rates of a group, in the order they are shown and posted. At least two distinct, active, non-group rates.
+             * @example [
+             *       1,
+             *       2
+             *     ]
+             */
+            componentIds?: number[];
+            /**
+             * @description The tax payable account the rate posts to. Null posts to the default Tax Payable account.
+             * @example 1
+             */
+            payableAccountId?: number | null;
         };
         PaymentReceiveMailResponseDto: {
             /**
@@ -8768,6 +8843,8 @@ export interface components {
         PaymentLinkTaxEntryDto: {
             /** @description Tax name */
             name: string;
+            /** @description Tax percentage stored on the document */
+            taxRate: number;
             /** @description Tax rate amount */
             taxRateAmount: number;
             /** @description Formatted tax rate amount */

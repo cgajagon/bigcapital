@@ -55,10 +55,16 @@ function TaxRateDeleteAlertInner({
         const errors = error?.data?.errors ?? [];
         const isInUse = errors.some((e) => e.type === 'TAX_RATE_IN_USE');
 
+        const isGroupComponent = errors.some(
+          (e) => e.type === 'TAX_RATE_IS_GROUP_COMPONENT',
+        );
+
         AppToaster.show({
-          message: isInUse
-            ? "This tax rate is used by transactions or items, so it can't be deleted. You can make it inactive instead."
-            : 'Something went wrong.',
+          message: isGroupComponent
+            ? "This tax rate is a component of a tax group, so it can't be deleted. Remove it from the group first."
+            : isInUse
+              ? "This tax rate is used by transactions or items, so it can't be deleted. You can make it inactive instead."
+              : 'Something went wrong.',
           intent: Intent.DANGER,
         });
       })

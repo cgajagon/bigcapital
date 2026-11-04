@@ -26,7 +26,12 @@ const statusAccessor = (taxRate: TaxRate) => {
 const nameAccessor = (taxRate: TaxRate) => {
   return (
     <>
-      <span>{taxRate.name}</span>
+      <span>{taxRate.name}</span>{' '}
+      {!!taxRate.isGroup && (
+        <span className={clsx(Classes.TEXT_MUTED)}>
+          ({taxRate.components.map((c) => c.code).join(' + ')})
+        </span>
+      )}
       {!!taxRate.isCompound && (
         <span className={clsx(Classes.TEXT_MUTED)}>(Compound tax)</span>
       )}

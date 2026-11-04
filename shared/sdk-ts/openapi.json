@@ -29547,6 +29547,37 @@
         "type": "object",
         "properties": {}
       },
+      "TaxRateComponentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "The unique identifier of the component tax rate",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the component tax rate",
+            "example": "TPS"
+          },
+          "code": {
+            "type": "string",
+            "description": "The code of the component tax rate",
+            "example": "TPS"
+          },
+          "rate": {
+            "type": "number",
+            "description": "The current rate of the component tax rate",
+            "example": 5
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "code",
+          "rate"
+        ]
+      },
       "TaxRateResponseDto": {
         "type": "object",
         "properties": {
@@ -29600,6 +29631,29 @@
             "description": "Whether the tax rate is active",
             "example": true
           },
+          "isGroup": {
+            "type": "boolean",
+            "description": "Whether the tax rate is a group of component rates; a group's rate is the sum of its components' rates",
+            "example": false
+          },
+          "payableAccountId": {
+            "type": "number",
+            "description": "The tax payable account the rate posts to; null posts to the default Tax Payable account",
+            "example": null,
+            "nullable": true
+          },
+          "components": {
+            "description": "The component tax rates of a group, in order; empty for a plain rate",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxRateComponentResponseDto"
+            }
+          },
+          "isUsed": {
+            "type": "boolean",
+            "description": "Whether a document line, tax transaction, ledger entry or item default uses the tax rate; a used group's components and a used rate's payable account can't change",
+            "example": false
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -29623,6 +29677,10 @@
           "isNonRecoverable",
           "isCompound",
           "active",
+          "isGroup",
+          "payableAccountId",
+          "components",
+          "isUsed",
           "createdAt",
           "updatedAt"
         ]
@@ -29642,7 +29700,7 @@
           },
           "rate": {
             "type": "number",
-            "description": "The rate of the tax rate.",
+            "description": "The rate of the tax rate. Required for a plain rate; ignored for a group, whose rate is the sum of its components' rates.",
             "example": 10
           },
           "description": {
@@ -29664,12 +29722,33 @@
             "type": "boolean",
             "description": "Whether the tax rate is active.",
             "example": false
+          },
+          "isGroup": {
+            "type": "boolean",
+            "description": "Whether the tax rate is a group of component rates. Set on creation; a rate never changes between plain and group.",
+            "example": false
+          },
+          "componentIds": {
+            "description": "The ids of the component tax rates of a group, in the order they are shown and posted. At least two distinct, active, non-group rates.",
+            "example": [
+              1,
+              2
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "payableAccountId": {
+            "type": "number",
+            "description": "The tax payable account the rate posts to. Null posts to the default Tax Payable account.",
+            "example": 1,
+            "nullable": true
           }
         },
         "required": [
           "name",
           "code",
-          "rate",
           "description",
           "isNonRecoverable",
           "isCompound",
@@ -29691,7 +29770,7 @@
           },
           "rate": {
             "type": "number",
-            "description": "The rate of the tax rate.",
+            "description": "The rate of the tax rate. Required for a plain rate; ignored for a group, whose rate is the sum of its components' rates.",
             "example": 10
           },
           "description": {
@@ -29713,12 +29792,33 @@
             "type": "boolean",
             "description": "Whether the tax rate is active.",
             "example": false
+          },
+          "isGroup": {
+            "type": "boolean",
+            "description": "Whether the tax rate is a group of component rates. Set on creation; a rate never changes between plain and group.",
+            "example": false
+          },
+          "componentIds": {
+            "description": "The ids of the component tax rates of a group, in the order they are shown and posted. At least two distinct, active, non-group rates.",
+            "example": [
+              1,
+              2
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "payableAccountId": {
+            "type": "number",
+            "description": "The tax payable account the rate posts to. Null posts to the default Tax Payable account.",
+            "example": 1,
+            "nullable": true
           }
         },
         "required": [
           "name",
           "code",
-          "rate",
           "description",
           "isNonRecoverable",
           "isCompound",
@@ -30794,6 +30894,10 @@
             "type": "string",
             "description": "Tax name"
           },
+          "taxRate": {
+            "type": "number",
+            "description": "Tax percentage stored on the document"
+          },
           "taxRateAmount": {
             "type": "number",
             "description": "Tax rate amount"
@@ -30809,6 +30913,7 @@
         },
         "required": [
           "name",
+          "taxRate",
           "taxRateAmount",
           "taxRateAmountFormatted",
           "taxRateCode"

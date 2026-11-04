@@ -2,6 +2,16 @@ import { Intent, Tag } from '@blueprintjs/core';
 import styled from 'styled-components';
 import { useTaxRateDetailsContext } from './TaxRateDetailsContentBoot';
 import { Card, DetailItem, DetailsMenu } from '@/components';
+import { useAccounts } from '@/hooks/query/accounts';
+
+function PayableAccountName({ id }: { id?: number | null }) {
+  const { data: accounts } = useAccounts();
+
+  if (id == null) return <>Tax Payable (default)</>;
+
+  const account = accounts?.find((a) => a.id === id);
+  return <>{account?.name ?? '-'}</>;
+}
 
 export function TaxRateDetailsContentDetails() {
   const { taxRate } = useTaxRateDetailsContext();
@@ -24,6 +34,22 @@ export function TaxRateDetailsContentDetails() {
         <DetailsMenu direction={'horizantal'} minLabelSize={200}>
           <DetailItem label={'Tax Rate Name'} children={taxRate?.name} />
           <DetailItem label={'Code'} children={taxRate?.code} />
+          {taxRate?.isGroup && (
+            <DetailItem
+              label={'Components'}
+              children={
+                taxRate.components
+                  .map((c) => `${c.name} [${Number(c.rate)}%]`)
+                  .join(' + ') || '-'
+              }
+            />
+          )}
+          {!taxRate?.isGroup && (
+            <DetailItem
+              label={'Payable account'}
+              children={<PayableAccountName id={taxRate?.payableAccountId} />}
+            />
+          )}
           <DetailItem
             label={'Description'}
             children={taxRate?.description || '-'}

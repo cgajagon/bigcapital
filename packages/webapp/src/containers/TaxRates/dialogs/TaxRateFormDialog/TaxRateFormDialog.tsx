@@ -41,7 +41,7 @@ function TaxRateFormDialogInner({
 }
 
 const TaxRateDialog = styled(Dialog)`
-  max-width: 450px;
+  max-width: 520px;
 `;
 
 export const TaxRateFormDialog = FF.pipe(
