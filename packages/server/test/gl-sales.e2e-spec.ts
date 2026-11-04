@@ -239,7 +239,7 @@ describe('GL entries — Sales transactions (e2e)', () => {
   describe('Tax with negative lines (rate 14.975%)', () => {
     let taxRate: number;
 
-    const createInvoice = async (lines: number[]) => {
+    const createInvoice = async (lines: number[], rateId?: number) => {
       const res = await request(app.getHttpServer())
         .post('/sale-invoices')
         .set(authHeaders())
@@ -256,7 +256,7 @@ describe('GL entries — Sales transactions (e2e)', () => {
             itemId,
             quantity: 1,
             rate,
-            taxRateId: taxRate,
+            taxRateId: rateId ?? taxRate,
           })),
         })
         .expect(201);
@@ -310,6 +310,12 @@ describe('GL entries — Sales transactions (e2e)', () => {
     });
 
     it('sums the three invoices in the sales tax liability summary', async () => {
+      // Self-contained: a dedicated rate and its own three invoices.
+      const ownRate = await createTaxRate(14.975);
+      await createInvoice([37.5, -4.5], ownRate);
+      await createInvoice([3, -3], ownRate);
+      await createInvoice([4.5, -37.5], ownRate);
+
       const res = await request(app.getHttpServer())
         .get('/reports/sales-tax-liability-summary')
         .set(authHeaders())
@@ -320,8 +326,12 @@ describe('GL entries — Sales transactions (e2e)', () => {
         })
         .expect(200);
 
-      const row = res.body.data.tax_rates.find((r: any) => r.id === taxRate);
-      expect(row).toBeDefined();
+      const row = res.body.data.tax_rates.find((r: any) => r.id === ownRate);
+      if (!row) {
+        throw new Error(
+          `Tax rate ${ownRate} is missing from the sales tax liability summary`,
+        );
+      }
       // 4.95 + 0 - 4.95.
       expect(row.tax_amount.amount).toBe(0);
     });
