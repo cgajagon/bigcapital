@@ -17,6 +17,7 @@ import type {
 } from '@bigcapital/sdk-ts';
 import type { SettingsGroup } from '@bigcapital/sdk-ts';
 import { Features } from '@/constants';
+import { getEntriesDocumentTaxRates } from '@/containers/Entries/utils';
 import {
   useInvoice,
   useItems,
@@ -51,6 +52,7 @@ type InvoiceFormContextValue = {
   branches: Branch[];
   warehouses: Warehouse[];
   taxRates: TaxRate[];
+  documentTaxRates: Record<string, number>;
   brandingTemplates: PdfTemplateResponse[];
   paymentServices: GetPaymentServicesResponse | undefined;
 
@@ -180,6 +182,12 @@ function InvoiceFormProvider({
   // Detarmines whether the form in new mode.
   const isNewMode = !invoiceId;
 
+  // The saved invoice keeps its percentage for each tax it uses.
+  const documentTaxRates = React.useMemo(
+    () => (isNewMode ? {} : getEntriesDocumentTaxRates(invoice?.entries)),
+    [isNewMode, invoice],
+  );
+
   // Determines whether the warehouse and branches are loading.
   const isFeatureLoading =
     isWarehouesLoading || isBranchesLoading || isBrandingTemplatesLoading;
@@ -203,6 +211,7 @@ function InvoiceFormProvider({
     branches: branches ?? [],
     warehouses: warehouses ?? [],
     taxRates: taxRates ?? [],
+    documentTaxRates,
     brandingTemplates:
       brandingTemplates?.templates ?? ([] as PdfTemplateResponse[]),
 

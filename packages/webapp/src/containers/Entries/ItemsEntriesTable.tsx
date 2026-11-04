@@ -24,6 +24,7 @@ interface ItemsEntriesTableProps {
   value?: ItemEntry[];
   onChange?: (entries: ItemEntry[]) => void;
   taxRates?: TaxRate[];
+  documentTaxRates?: Record<string, number>;
   minLinesNumber?: number;
   enableTaxRates?: boolean;
   items?: Item[];
@@ -80,6 +81,7 @@ function ItemEntriesTableRoot() {
     currencyCode,
     landedCost,
     taxRates,
+    documentTaxRates,
     itemType,
   } = useItemEntriesTableContext();
 
@@ -94,6 +96,7 @@ function ItemEntriesTableRoot() {
   const { setItemRow, cellsLoading, isItemFetching } = useFetchItemRow({
     landedCost,
     itemType,
+    taxRates,
     notifyNewRow: (newRow, rowIndex) => {
       // Update the rate, description and quantity data of the row.
       const newRows = composeRowsOnNewRow(rowIndex, newRow, localValue);
@@ -130,6 +133,7 @@ function ItemEntriesTableRoot() {
       payload={{
         items,
         taxRates,
+        documentTaxRates,
         errors: errors || [],
         updateData: handleUpdateData,
         removeRow: handleRemoveRow,

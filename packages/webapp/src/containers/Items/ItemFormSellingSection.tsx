@@ -22,6 +22,7 @@ import {
 } from '@/components';
 import { FormattedMessage as T } from '@/components';
 import { TaxRatesSelect } from '@/components/TaxRates/TaxRatesSelect';
+import { getSelectableTaxRates } from '@/components/TaxRates/utils';
 import { Features } from '@/constants';
 import { ACCOUNT_PARENT_TYPE } from '@/constants/accountTypes';
 import { useCurrentOrganizationBaseCurrency } from '@/hooks/query';
@@ -30,7 +31,13 @@ import { useFeatureCan } from '@/hooks/state';
 export function ItemFormSellingSection() {
   const { accounts, taxRates } = useItemFormContext();
   const baseCurrency = useCurrentOrganizationBaseCurrency();
-  const { values } = useFormikContext<ItemFormValues>();
+  const { values, initialValues } = useFormikContext<ItemFormValues>();
+
+  // Inactive tax rates aren't offered, except the item's saved default.
+  const sellTaxRates = React.useMemo(
+    () => getSelectableTaxRates(taxRates, [initialValues.sellTaxRateId]),
+    [taxRates, initialValues.sellTaxRateId],
+  );
 
   const { featureCan } = useFeatureCan();
   const isSalesTaxFeatureCan = featureCan(Features.SalesTax);
@@ -98,7 +105,11 @@ export function ItemFormSellingSection() {
       {/*------------- Sell Tax Rate ------------- */}
       {isSalesTaxFeatureCan && (
         <FFormGroup name={'sellTaxRateId'} label={'Tax Rate'} inline={true}>
-          <TaxRatesSelect name={'sellTaxRateId'} items={taxRates} allowCreate />
+          <TaxRatesSelect
+            name={'sellTaxRateId'}
+            items={sellTaxRates}
+            allowCreate
+          />
         </FFormGroup>
       )}
 

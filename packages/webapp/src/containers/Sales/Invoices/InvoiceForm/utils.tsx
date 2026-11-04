@@ -243,6 +243,7 @@ export const entriesFieldShouldUpdate = (
   return (
     newProps.items !== oldProps.items ||
     newProps.taxRates !== oldProps.taxRates ||
+    newProps.documentTaxRates !== oldProps.documentTaxRates ||
     defaultFastFieldShouldUpdate(newProps, oldProps)
   );
 };

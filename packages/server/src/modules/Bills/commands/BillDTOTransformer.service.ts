@@ -66,6 +66,8 @@ export class BillDTOTransformer {
       ...omit(entry, ['amount']),
     }));
     const asyncEntries = await composeAsync(
+      // Keep the percentage the saved document already has for each tax.
+      this.taxDTOTransformer.assocDocumentTaxRatesToEntries(oldBill?.entries),
       // Associate tax rate from tax id to entries.
       this.taxDTOTransformer.assocTaxRateFromTaxIdToEntries,
       // Associate tax rate id from tax code to entries.

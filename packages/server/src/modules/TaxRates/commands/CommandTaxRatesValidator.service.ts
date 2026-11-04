@@ -10,6 +10,10 @@ import { TenantModelProxy } from '@/modules/System/models/TenantBaseModel';
 import { ItemEntryDto } from '@/modules/TransactionItemEntry/dto/ItemEntry.dto';
 import { FeaturesManager } from '@/modules/Features/FeaturesManager';
 import { Features } from '@/common/types/Features';
+import { ItemEntry } from '@/modules/TransactionItemEntry/models/ItemEntry';
+import { Item } from '@/modules/Items/models/Item';
+import { AccountTransaction } from '@/modules/Accounts/models/AccountTransaction.model';
+import { TaxRateTransaction } from '../models/TaxRateTransaction.model';
 
 @Injectable()
 export class CommandTaxRatesValidators {
@@ -21,6 +25,22 @@ export class CommandTaxRatesValidators {
     private readonly taxRateModel: TenantModelProxy<typeof TaxRateModel>,
 
     private readonly featuresManager: FeaturesManager,
+
+    @Inject(ItemEntry.name)
+    private readonly itemEntryModel: TenantModelProxy<typeof ItemEntry>,
+
+    @Inject(TaxRateTransaction.name)
+    private readonly taxRateTransactionModel: TenantModelProxy<
+      typeof TaxRateTransaction
+    >,
+
+    @Inject(AccountTransaction.name)
+    private readonly accountTransactionModel: TenantModelProxy<
+      typeof AccountTransaction
+    >,
+
+    @Inject(Item.name)
+    private readonly itemModel: TenantModelProxy<typeof Item>,
   ) {}
 
   /**
@@ -54,15 +74,54 @@ export class CommandTaxRatesValidators {
   }
 
   /**
+   * Validates the given tax rate isn't used by any document line, tax
+   * transaction, ledger entry or item default tax.
+   * @param {number} taxRateId
+   * @param {Knex.Transaction} trx
+   * @throws {ServiceError}
+   */
+  public async validateTaxRateNotInUse(
+    taxRateId: number,
+    trx?: Knex.Transaction,
+  ) {
+    const usages = [
+      () => this.itemEntryModel().query(trx).findOne({ taxRateId }),
+      () => this.taxRateTransactionModel().query(trx).findOne({ taxRateId }),
+      () => this.accountTransactionModel().query(trx).findOne({ taxRateId }),
+      () =>
+        this.itemModel()
+          .query(trx)
+          .where('sellTaxRateId', taxRateId)
+          .orWhere('purchaseTaxRateId', taxRateId)
+          .first(),
+    ];
+    for (const findUsage of usages) {
+      if (await findUsage()) {
+        throw new ServiceError(
+          ERRORS.TAX_RATE_IN_USE,
+          "The tax rate is used by transactions or items and can't be deleted. Make it inactive instead.",
+        );
+      }
+    }
+  }
+
+  /**
    * Validates the tax code uniquiness.
-   * @param {number} tenantId
    * @param {string} taxCode
    * @param {Knex.Transaction} trx -
+   * @param {number} exceptTaxRateId - The tax rate being edited, ignored.
    */
-  public async validateTaxCodeUnique(taxCode: string, trx?: Knex.Transaction) {
-    const foundTaxCode = await this.taxRateModel()
-      .query(trx)
-      .findOne({ code: taxCode });
+  public async validateTaxCodeUnique(
+    taxCode: string,
+    trx?: Knex.Transaction,
+    exceptTaxRateId?: number,
+  ) {
+    const query = this.taxRateModel().query(trx).findOne({ code: taxCode });
+
+    if (exceptTaxRateId) {
+      query.whereNot('id', exceptTaxRateId);
+    }
+    const foundTaxCode = await query;
 
     if (foundTaxCode) {
       throw new ServiceError(ERRORS.TAX_CODE_NOT_UNIQUE);

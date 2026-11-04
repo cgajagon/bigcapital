@@ -259,6 +259,7 @@ export const entriesFieldShouldUpdate = (
 ): boolean => {
   return (
     newProps.items !== oldProps.items ||
+    newProps.documentTaxRates !== oldProps.documentTaxRates ||
     (defaultFastFieldShouldUpdate(newProps, oldProps) as boolean)
   );
 };

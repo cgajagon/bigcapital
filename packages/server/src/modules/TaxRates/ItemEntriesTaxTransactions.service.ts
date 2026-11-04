@@ -6,6 +6,7 @@ import { TaxRateModel } from './models/TaxRate.model';
 import { TenantModelProxy } from '../System/models/TenantBaseModel';
 import { FeaturesManager } from '../Features/FeaturesManager';
 import { Features } from '@/common/types/Features';
+import { applyDocumentTaxRates, getDocumentTaxRates } from './DocumentTaxRates';
 
 @Injectable()
 export class ItemEntriesTaxTransactions {
@@ -88,4 +89,21 @@ export class ItemEntriesTaxTransactions {
       return entry;
     });
   };
+
+  /**
+   * Keeps the percentage the old document stored for each tax it already
+   * used, so re-saving a document doesn't pick up a rate's newer percentage.
+   * Runs after `assocTaxRateFromTaxIdToEntries`.
+   * @param {ItemEntry[]} oldEntries - The saved document's entries, if any.
+   */
+  public assocDocumentTaxRatesToEntries =
+    (oldEntries?: ItemEntry[]) =>
+    async (entries: ItemEntry[]): Promise<ItemEntry[]> => {
+      const isSalesTaxEnabled = await this.featuresManager.accessible(
+        Features.SALES_TAX,
+      );
+      if (!isSalesTaxEnabled) return entries;
+
+      return applyDocumentTaxRates(entries, getDocumentTaxRates(oldEntries));
+    };
 }

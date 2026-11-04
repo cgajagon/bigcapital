@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Knex } from 'knex';
-import { omit } from 'lodash';
 import {
   ITaxRateEditedPayload,
   ITaxRateEditingPayload,
@@ -31,60 +30,6 @@ export class EditTaxRateService {
   ) {}
 
   /**
-   * Determines whether the tax rate, name or code have been changed.
-   * @param {ITaxRate} taxRate
-   * @param {IEditTaxRateDTO} editTaxRateDTO
-   * @returns {boolean}
-   */
-  private isTaxRateDTOChanged = (
-    taxRate: TaxRateModel,
-    editTaxRateDTO: EditTaxRateDto,
-  ) => {
-    return (
-      taxRate.rate !== editTaxRateDTO.rate ||
-      taxRate.name !== editTaxRateDTO.name ||
-      taxRate.code !== editTaxRateDTO.code
-    );
-  };
-
-  /**
-   * Edits the given tax rate or creates a new if the rate or name have been changed.
-   * @param {number} tenantId
-   * @param {ITaxRate} oldTaxRate
-   * @param {IEditTaxRateDTO} editTaxRateDTO
-   * @param {Knex.Transaction} trx
-   * @returns {Promise<ITaxRate>}
-   */
-  private async editTaxRateOrCreate(
-    oldTaxRate: TaxRateModel,
-    editTaxRateDTO: EditTaxRateDto,
-    trx?: Knex.Transaction,
-  ) {
-    const isTaxDTOChanged = this.isTaxRateDTOChanged(
-      oldTaxRate,
-      editTaxRateDTO,
-    );
-    if (isTaxDTOChanged) {
-      // Soft deleting the old tax rate.
-      await this.taxRateModel().query(trx).findById(oldTaxRate.id).delete();
-
-      // Create a new tax rate with new edited data.
-      return this.taxRateModel()
-        .query(trx)
-        .insertAndFetch({
-          ...omit(oldTaxRate, ['id']),
-          ...editTaxRateDTO,
-        });
-    } else {
-      return this.taxRateModel()
-        .query(trx)
-        .patchAndFetchById(oldTaxRate.id, {
-          ...editTaxRateDTO,
-        });
-    }
-  }
-
-  /**
    * Edits the given tax rate.
    * @param {number} taxRateId - The tax rate id.
    * @param {IEditTaxRateDTO} editTaxRateDTO - The tax rate data to edit.
@@ -103,11 +48,17 @@ export class EditTaxRateService {
         trx,
       } as ITaxRateEditingPayload);
 
-      const taxRate = await this.editTaxRateOrCreate(
-        oldTaxRate,
-        editTaxRateDTO,
+      // Validates the tax code uniqueness against the other tax rates.
+      await this.validators.validateTaxCodeUnique(
+        editTaxRateDTO.code,
         trx,
+        taxRateId,
       );
+      // Edits the tax rate in place, so documents keep pointing at the same id.
+      const taxRate = await this.taxRateModel()
+        .query(trx)
+        .patchAndFetchById(taxRateId, { ...editTaxRateDTO });
+
       // Triggers `onTaxRateEdited` event.
       await this.eventEmitter.emitAsync(events.taxRates.onEdited, {
         editTaxRateDTO,

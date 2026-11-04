@@ -51,9 +51,14 @@ function TaxRateDeleteAlertInner({
         });
         closeDrawer(DRAWERS.TAX_RATE_DETAILS);
       })
-      .catch(() => {
+      .catch((error: { data?: { errors?: Array<{ type?: string }> } }) => {
+        const errors = error?.data?.errors ?? [];
+        const isInUse = errors.some((e) => e.type === 'TAX_RATE_IN_USE');
+
         AppToaster.show({
-          message: 'Something went wrong.',
+          message: isInUse
+            ? "This tax rate is used by transactions or items, so it can't be deleted. You can make it inactive instead."
+            : 'Something went wrong.',
           intent: Intent.DANGER,
         });
       })
