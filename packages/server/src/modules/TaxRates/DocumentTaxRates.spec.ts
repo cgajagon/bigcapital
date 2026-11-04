@@ -14,7 +14,7 @@ describe('getDocumentTaxRates', () => {
     ).toEqual({ 1: 10, 2: 0 });
   });
 
-  it('reads percentages stored as decimal strings', () => {
+  it('reads percentages given as decimal strings', () => {
     expect(
       getDocumentTaxRates([
         { taxRateId: 5, taxRate: '9.9750' },

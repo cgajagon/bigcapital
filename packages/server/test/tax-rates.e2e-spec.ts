@@ -194,18 +194,21 @@ describe('Tax Rates (e2e)', () => {
       ]);
       const invoiceId = await createInvoice(dto);
 
+      // A is used by the invoice; B isn't yet, so B takes its new 7 %.
       await editTaxRate(taxRateA, taxRateBody(20)).expect(200);
+      await editTaxRate(taxRateB, taxRateBody(7)).expect(200);
 
       await request(app.getHttpServer())
         .put(`/sale-invoices/${invoiceId}`)
         .set(authHeaders())
-        .send(
-          invoiceDTO(customerId, [
+        .send({
+          ...invoiceDTO(customerId, [
             { itemId, rate: 1000, taxRateId: taxRateA },
             { itemId, rate: 500, taxRateId: taxRateA },
             { itemId, rate: 200, taxRateId: taxRateB },
           ]),
-        )
+          invoiceNo: dto.invoiceNo,
+        })
         .expect(200);
 
       const saved = await request(app.getHttpServer())
@@ -213,8 +216,8 @@ describe('Tax Rates (e2e)', () => {
         .set(authHeaders())
         .expect(200);
 
-      expect(lineTaxRates(saved.body)).toEqual([10, 10, 5]);
-      expect(Number(saved.body.tax_amount_withheld)).toBe(160);
+      expect(lineTaxRates(saved.body)).toEqual([10, 10, 7]);
+      expect(Number(saved.body.tax_amount_withheld)).toBe(164);
 
       const newInvoiceId = await createInvoice(
         invoiceDTO(customerId, [{ itemId, rate: 1000, taxRateId: taxRateA }]),

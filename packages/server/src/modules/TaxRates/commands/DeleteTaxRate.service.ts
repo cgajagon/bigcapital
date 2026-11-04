@@ -39,10 +39,11 @@ export class DeleteTaxRateService {
     // Validates the tax rate existance.
     this.validators.validateTaxRateExistance(oldTaxRate);
 
-    // Validates no document, ledger entry or item uses the tax rate.
-    await this.validators.validateTaxRateNotInUse(taxRateId);
-
     return this.uow.withTransaction(async (trx: Knex.Transaction) => {
+      // Validates no document, ledger entry or item uses the tax rate, inside
+      // the transaction so nothing can start using it before the delete.
+      await this.validators.validateTaxRateNotInUse(taxRateId, trx);
+
       // Triggers `onTaxRateDeleting` event.
       await this.eventEmitter.emitAsync(events.taxRates.onDeleting, {
         oldTaxRate,

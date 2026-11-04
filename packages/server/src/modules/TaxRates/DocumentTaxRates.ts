@@ -11,8 +11,8 @@ interface TaxedEntry {
 /**
  * Reads the percentage a saved document stored for each tax it uses.
  * Lines with no stored percentage are skipped, so their tax falls back to the
- * rate's current percentage; a stored 0 is kept. Database decimals may come
- * back as strings.
+ * rate's current percentage; a stored 0 is kept. Percentages given as decimal
+ * strings are read as numbers.
  * @param {TaxedEntry[]} entries - The saved document's entries.
  * @returns {DocumentTaxRates}
  */

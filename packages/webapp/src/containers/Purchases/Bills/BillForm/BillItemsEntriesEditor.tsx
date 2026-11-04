@@ -28,6 +28,7 @@ export function BillFormBody() {
     <FastField
       name={'entries'}
       items={items}
+      documentTaxRates={documentTaxRates}
       shouldUpdate={entriesFieldShouldUpdate}
     >
       {({ form, field, meta }: EntriesFieldRenderProps) => (

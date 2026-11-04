@@ -20,6 +20,7 @@ export function InvoiceItemsEntriesEditorField() {
       name={'entries'}
       items={items}
       taxRates={taxRates}
+      documentTaxRates={documentTaxRates}
       shouldUpdate={entriesFieldShouldUpdate}
     >
       {({
