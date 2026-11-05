@@ -6,6 +6,7 @@ import { GetBankReconciliation } from './queries/GetBankReconciliation.service';
 import { SaveBankReconciliationDraft } from './commands/SaveBankReconciliationDraft.service';
 import { DiscardBankReconciliationDraft } from './commands/DiscardBankReconciliationDraft.service';
 import { FinishBankReconciliation } from './commands/FinishBankReconciliation.service';
+import { UndoBankReconciliation } from './commands/UndoBankReconciliation.service';
 import { BankReconciliationInputDto } from './dtos/BankReconciliationInput.dto';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class BankReconciliationApplication {
     private readonly saveDraftService: SaveBankReconciliationDraft,
     private readonly discardDraftService: DiscardBankReconciliationDraft,
     private readonly finishService: FinishBankReconciliation,
+    private readonly undoService: UndoBankReconciliation,
   ) {}
 
   public getSummary(accountId: number, statementDate?: string) {
@@ -49,5 +51,9 @@ export class BankReconciliationApplication {
 
   public finish(accountId: number, dto: BankReconciliationInputDto) {
     return this.finishService.finish(accountId, dto);
+  }
+
+  public undo(reconciliationId: number) {
+    return this.undoService.undo(reconciliationId);
   }
 }

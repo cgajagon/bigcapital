@@ -764,6 +764,13 @@ describe('Bank reconciliation (e2e)', () => {
       });
 
       it('finishes with the right ending balance and records who did it', async () => {
+        // A draft exists at finish time; finish must remove it.
+        await saveDraft(accountId, input(statementDate, 750, refs)).expect(200);
+        await eventually(
+          () => summaryOf(accountId, statementDate),
+          (body) => !!body.draft,
+        );
+
         const created = await finish(
           accountId,
           input(statementDate, 750, refs),
@@ -868,6 +875,216 @@ describe('Bank reconciliation (e2e)', () => {
         // The books lost the 40 the statement closed at.
         expect(summary.beginningBalance).toBe(0);
         expect(summary.mismatch.amount).toBe(-40);
+      });
+    });
+
+    describe('stored totals and bank rows', () => {
+      const statementDate = '2037-01-31';
+
+      it('stores the section 5.9 totals at finish', async () => {
+        const accountId = await createAccount('bank', 'Rec totals bank');
+        const expenseAccountId = await createAccount(
+          'expense',
+          'Rec totals exp',
+        );
+        await createOwnerContribution(accountId, 500, '2037-01-05');
+        await createOwnerContribution(accountId, 120, '2037-01-10');
+        await createExpenseFrom(accountId, expenseAccountId, 70, '2037-01-12');
+        await createExpenseFrom(accountId, expenseAccountId, 30, '2037-01-15');
+        await createOwnerContribution(accountId, 900, '2037-02-10');
+        const ticked = [
+          await refByAmount(accountId, statementDate, 500),
+          await refByAmount(accountId, statementDate, -30),
+        ];
+
+        const res = await finish(
+          accountId,
+          input(statementDate, 470, ticked),
+        ).expect(201);
+
+        const detail = await eventually(
+          () => detailOf(res.body.id),
+          (body) => body.transactions.length === 2,
+        );
+        expect(detail.beginningBalance).toBe(0);
+        expect(detail.clearedIncreases).toBe(500);
+        // A positive magnitude.
+        expect(detail.clearedDecreases).toBe(30);
+        expect(detail.bookBalance).toBe(520);
+        expect(detail.unclearedCount).toBe(2);
+        expect(detail.unclearedTotal).toBe(50);
+      });
+
+      it('keeps a finished bank feed transaction as a snapshot after it is uncategorized', async () => {
+        const accountId = await createAccount('bank', 'Rec snapshot bank');
+        const expenseAccountId = await createAccount('expense', 'Rec snap exp');
+        await importCsv(
+          accountId,
+          [
+            'Date,Payee,Description,Amount',
+            '2037-03-03,Hydro,Electricity,-50.00',
+          ].join(String.fromCharCode(10)),
+        );
+        const feed = camelDeep(
+          (
+            await authed(
+              api().get(`/banking/uncategorized/accounts/${accountId}`),
+            ).expect(200)
+          ).body,
+        ).data as any[];
+        const uncategorizedId = feed[0].id;
+        await authed(api().post('/banking/categorize'))
+          .send({
+            uncategorizedTransactionIds: [uncategorizedId],
+            date: '2037-03-03',
+            creditAccountId: expenseAccountId,
+            transactionType: 'other_expense',
+            exchangeRate: 1,
+          })
+          .expect(201);
+
+        const ref = await refByAmount(accountId, '2037-03-31', -50);
+        const res = await finish(
+          accountId,
+          input('2037-03-31', -50, [ref]),
+        ).expect(201);
+
+        await authed(
+          api().delete(`/banking/categorize/${uncategorizedId}`),
+        ).expect(200);
+
+        // The transaction left the books, the reconciliation keeps its snapshot.
+        const detail = await eventually(
+          () => detailOf(res.body.id),
+          (body) => body.transactions[0]?.isDeleted === true,
+        );
+        expect(detail.transactions).toHaveLength(1);
+        expect(detail.transactions[0].amount).toBe(-50);
+        expect(detail.transactions[0].isDeleted).toBe(true);
+        expect(detail.transactions[0].currentAmount).toBe(0);
+        // Bank row links are internal: the detail does not expose them, so
+        // only the snapshot surviving the uncategorize is asserted here.
+      });
+    });
+
+    describe('undo', () => {
+      const undo = (reconciliationId: number) =>
+        authed(api().post(`/banking/reconciliations/${reconciliationId}/undo`));
+
+      const balanceOf = async (accountId: number) =>
+        camelDeep(
+          (await authed(api().get(`/accounts/${accountId}`)).expect(200)).body,
+        ).amount;
+
+      it('undoes the target, every later reconciliation and the draft', async () => {
+        const accountId = await createAccount('bank', 'Rec undo bank');
+        await createOwnerContribution(accountId, 100, '2038-01-10');
+        await createOwnerContribution(accountId, 200, '2038-02-10');
+        await createOwnerContribution(accountId, 300, '2038-03-10');
+
+        const january = await finish(
+          accountId,
+          input('2038-01-31', 100, [
+            await refByAmount(accountId, '2038-01-31', 100),
+          ]),
+        ).expect(201);
+        const february = await finish(
+          accountId,
+          input('2038-02-28', 300, [
+            await refByAmount(accountId, '2038-02-28', 200),
+          ]),
+        ).expect(201);
+        await saveDraft(
+          accountId,
+          input('2038-03-31', 600, [
+            await refByAmount(accountId, '2038-03-31', 300),
+          ]),
+        ).expect(200);
+        await eventually(
+          () => summaryOf(accountId, '2038-03-31'),
+          (body) => !!body.draft,
+        );
+        const balanceBefore = await balanceOf(accountId);
+
+        const res = await undo(january.body.id).expect(201);
+        expect([...camelDeep(res.body).undoneIds].sort()).toEqual(
+          [january.body.id, february.body.id].sort(),
+        );
+
+        const history = await eventually(
+          () => historyOf(accountId),
+          (list) => list.length === 0,
+        );
+        expect(history).toEqual([]);
+        const summary = await eventually(
+          () => summaryOf(accountId, '2038-03-31'),
+          (body) => body.draft === null,
+        );
+        expect(summary.draft).toBeNull();
+        expect(summary.lastReconciliation).toBeNull();
+        expect(summary.beginningBalance).toBe(0);
+
+        const rows = await transactionsOf(accountId, '2038-03-31');
+        expect(rows.transactions.map((r: any) => r.amount).sort()).toEqual([
+          100, 200, 300,
+        ]);
+        expect(
+          rows.transactions.every(
+            (r: any) => r.reconcileStatus !== 'reconciled',
+          ),
+        ).toBe(true);
+
+        // The books were not touched.
+        expect(await balanceOf(accountId)).toBe(balanceBefore);
+        // The undone reconciliation is gone.
+        await authed(
+          api().get(`/banking/reconciliations/${february.body.id}`),
+        ).expect(400);
+      });
+
+      it('keeps the earlier reconciliations when a later one is undone', async () => {
+        const accountId = await createAccount('bank', 'Rec undo later bank');
+        await createOwnerContribution(accountId, 100, '2038-04-10');
+        await createOwnerContribution(accountId, 200, '2038-05-10');
+        const first = await finish(
+          accountId,
+          input('2038-04-30', 100, [
+            await refByAmount(accountId, '2038-04-30', 100),
+          ]),
+        ).expect(201);
+        const second = await finish(
+          accountId,
+          input('2038-05-31', 300, [
+            await refByAmount(accountId, '2038-05-31', 200),
+          ]),
+        ).expect(201);
+
+        const res = await undo(second.body.id).expect(201);
+        expect(camelDeep(res.body).undoneIds).toEqual([second.body.id]);
+
+        const history = await eventually(
+          () => historyOf(accountId),
+          (list) => list.length === 1,
+        );
+        expect(history.map((item) => item.id)).toEqual([first.body.id]);
+      });
+
+      it('answers an unknown id and a draft id with NOT_FOUND', async () => {
+        const unknown = await undo(99999999);
+        expect(errorType(unknown)).toBe('BANK_RECONCILIATION_NOT_FOUND');
+        expect(unknown.status).toBeGreaterThanOrEqual(400);
+        expect(unknown.status).toBeLessThan(500);
+
+        const accountId = await createAccount('bank', 'Rec undo draft bank');
+        await createOwnerContribution(accountId, 10, '2038-06-10');
+        const draft = await saveDraft(
+          accountId,
+          input('2038-06-30', 10, [
+            await refByAmount(accountId, '2038-06-30', 10),
+          ]),
+        ).expect(200);
+        const onDraft = await undo(draft.body.id);
+        expect(errorType(onDraft)).toBe('BANK_RECONCILIATION_NOT_FOUND');
       });
     });
 

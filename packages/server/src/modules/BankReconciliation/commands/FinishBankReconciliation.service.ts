@@ -17,7 +17,12 @@ import { BankReconciliation } from '../models/BankReconciliation';
 import { BankReconciliationTransaction } from '../models/BankReconciliationTransaction';
 import { BankReconciliationBankRow } from '../models/BankReconciliationBankRow';
 import { BankReconciliationInputDto } from '../dtos/BankReconciliationInput.dto';
-import { refKey, roundAmount, validateFinish } from '../_utils';
+import {
+  isDuplicateEntryError,
+  refKey,
+  roundAmount,
+  validateFinish,
+} from '../_utils';
 import { BankReconciliationStatus, ERRORS, FinishCheckInput } from '../types';
 
 const sum = (values: number[]): number =>
@@ -165,29 +170,37 @@ export class FinishBankReconciliation {
           completedByUserId: tenantUser?.id ?? null,
         });
 
-      for (const ref of selected) {
-        const key = refKey(ref);
-        const row = ledger.get(key);
-        const stored = await this.bankReconciliationTransactionModel()
-          .query(trx)
-          .insert({
-            reconciliationId: header.id,
-            accountId,
-            referenceType: row.referenceType,
-            referenceId: row.referenceId,
-            amount: row.amount,
-            date: row.date,
-            transactionTypeKey: row.transactionTypeKey,
-            transactionNumber: row.transactionNumber,
-            referenceNumber: row.referenceNumber,
-            contactName: row.contactName,
-          });
-        for (const uncategorizedId of bankLinks.get(key) ?? []) {
-          await this.bankReconciliationBankRowModel().query(trx).insert({
-            reconciliationTransactionId: stored.id,
-            uncategorizedTransactionId: uncategorizedId,
-          });
+      try {
+        for (const ref of selected) {
+          const key = refKey(ref);
+          const row = ledger.get(key);
+          const stored = await this.bankReconciliationTransactionModel()
+            .query(trx)
+            .insert({
+              reconciliationId: header.id,
+              accountId,
+              referenceType: row.referenceType,
+              referenceId: row.referenceId,
+              amount: row.amount,
+              date: row.date,
+              transactionTypeKey: row.transactionTypeKey,
+              transactionNumber: row.transactionNumber,
+              referenceNumber: row.referenceNumber,
+              contactName: row.contactName,
+            });
+          for (const uncategorizedId of bankLinks.get(key) ?? []) {
+            await this.bankReconciliationBankRowModel().query(trx).insert({
+              reconciliationTransactionId: stored.id,
+              uncategorizedTransactionId: uncategorizedId,
+            });
+          }
         }
+      } catch (error) {
+        // A concurrent finish ticked the same transaction first.
+        if (isDuplicateEntryError(error)) {
+          throw new ServiceError(ERRORS.TRANSACTION_ALREADY_RECONCILED);
+        }
+        throw error;
       }
 
       const draft = await this.repository.getDraft(accountId, trx);

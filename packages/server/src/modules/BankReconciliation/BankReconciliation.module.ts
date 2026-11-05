@@ -16,6 +16,7 @@ import { GetBankReconciliation } from './queries/GetBankReconciliation.service';
 import { SaveBankReconciliationDraft } from './commands/SaveBankReconciliationDraft.service';
 import { DiscardBankReconciliationDraft } from './commands/DiscardBankReconciliationDraft.service';
 import { FinishBankReconciliation } from './commands/FinishBankReconciliation.service';
+import { UndoBankReconciliation } from './commands/UndoBankReconciliation.service';
 
 const models = [
   RegisterTenancyModel(BankReconciliation),
@@ -38,6 +39,7 @@ const models = [
     SaveBankReconciliationDraft,
     DiscardBankReconciliationDraft,
     FinishBankReconciliation,
+    UndoBankReconciliation,
   ],
   exports: [...models],
 })

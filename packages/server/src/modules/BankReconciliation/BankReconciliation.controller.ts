@@ -157,4 +157,18 @@ export class BankReconciliationController {
   ) {
     return this.bankReconciliationApplication.finish(accountId, dto);
   }
+
+  @Post(':id/undo')
+  @RequirePermission(CashflowAction.UndoReconciliation, AbilitySubject.Cashflow)
+  @ApiOperation({
+    summary:
+      'Undoes the reconciliation, every later one of the account and the account draft.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'The ids of the undone reconciliations.',
+  })
+  public undo(@Param('id', ParseIntPipe) id: number) {
+    return this.bankReconciliationApplication.undo(id);
+  }
 }

@@ -214,3 +214,9 @@ export const preselectRefs = (
   const selected = draftSelection.filter((ref) => existing.has(refKey(ref)));
   return { selected, droppedCount: draftSelection.length - selected.length };
 };
+
+/**
+ * Whether the error is a MySQL unique-key violation (ER_DUP_ENTRY, 1062).
+ */
+export const isDuplicateEntryError = (error: any): boolean =>
+  error?.code === 'ER_DUP_ENTRY' || error?.errno === 1062;

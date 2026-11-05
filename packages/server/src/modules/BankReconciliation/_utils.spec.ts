@@ -4,6 +4,7 @@ import {
   findChangedReconciled,
   netAmountOnAccount,
   preselectRefs,
+  isDuplicateEntryError,
   resolveReconcileStatus,
   roundAmount,
   selectReconciliationsToUndo,
@@ -289,5 +290,20 @@ describe('toLedgerReferenceType', () => {
     expect(toLedgerReferenceType('CashflowTransaction')).toBe(
       'CashflowTransaction',
     );
+  });
+});
+
+describe('isDuplicateEntryError', () => {
+  it('recognises a MySQL duplicate key error', () => {
+    expect(isDuplicateEntryError({ code: 'ER_DUP_ENTRY', errno: 1062 })).toBe(
+      true,
+    );
+    expect(isDuplicateEntryError({ errno: 1062 })).toBe(true);
+  });
+
+  it('ignores other errors', () => {
+    expect(isDuplicateEntryError(new Error('boom'))).toBe(false);
+    expect(isDuplicateEntryError({ code: 'ER_LOCK_DEADLOCK' })).toBe(false);
+    expect(isDuplicateEntryError(undefined)).toBe(false);
   });
 });
