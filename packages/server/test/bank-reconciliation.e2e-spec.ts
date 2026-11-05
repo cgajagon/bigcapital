@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { faker } from '@faker-js/faker';
+import { knex as createKnex } from 'knex';
 import { camelCase, isArray, isPlainObject, mapKeys, mapValues } from 'lodash';
 import { app, AuthorizationHeader, orgainzationId } from './init-app-test';
 import {
@@ -208,6 +209,45 @@ export const importCsv = async (accountId: number, csv: string) => {
   return { preview: preview.body, result: result.body };
 };
 
+/**
+ * Stores a bank row -> manual journal match straight in the tenant database.
+ */
+const linkBankRowToJournal = async (
+  uncategorizedTransactionId: number,
+  journalId: number,
+  amount: number,
+) => {
+  const db = createKnex({
+    client: 'mysql2',
+    connection: {
+      // The app's mysql driver reaches 'localhost' over IPv4; mysql2 on
+      // Node 18 may pick ::1 (another server), so pin IPv4 explicitly.
+      host: (
+        process.env.TENANT_DB_HOST ||
+        process.env.DB_HOST ||
+        '127.0.0.1'
+      ).replace('localhost', '127.0.0.1'),
+      port: Number(process.env.TENANT_DB_PORT || process.env.DB_PORT || 3306),
+      user: process.env.TENANT_DB_USER || process.env.DB_USER,
+      password: process.env.TENANT_DB_PASSWORD || process.env.DB_PASSWORD,
+      database: `${process.env.TENANT_DB_NAME_PERFIX || 'bigcapital_tenant_'}${orgainzationId}`,
+    },
+  });
+  try {
+    // Tenant tables are upper-cased by the app's knex mapper.
+    await db('MATCHED_BANK_TRANSACTIONS').insert({
+      uncategorized_transaction_id: uncategorizedTransactionId,
+      reference_type: 'ManualJournal',
+      reference_id: journalId,
+      amount,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+  } finally {
+    await db.destroy();
+  }
+};
+
 const getSummary = (accountId: number, statementDate?: string) =>
   authed(
     api()
@@ -403,6 +443,152 @@ describe('Bank reconciliation (e2e)', () => {
       expect(rows.body.errors[0].type).toBe(
         'BANK_RECONCILIATION_ACCOUNT_NOT_RECONCILABLE',
       );
+    });
+
+    it('rejects a statement date that is not a plain YYYY-MM-DD date', async () => {
+      const timestamp = '2035-01-31T23:00:00Z';
+
+      await getSummary(accountId, timestamp).expect(400);
+      await getTransactions(accountId, timestamp).expect(400);
+      await getTransactions(accountId, '2035-02-30').expect(400);
+    });
+  });
+
+  describe('bank feed rows', () => {
+    const statementDate = '2035-03-31';
+
+    let accountId: number;
+    let expenseAccountId: number;
+    let journalId: number;
+    let manualId: number;
+
+    const uncategorizedRows = async () => {
+      const res = await authed(
+        api().get(`/banking/uncategorized/accounts/${accountId}`),
+      ).expect(200);
+      return camelDeep(res.body).data as any[];
+    };
+    const idByAmount = (rows: any[], amount: number) =>
+      rows.find((row) => Math.abs(Number(row.amount)) === amount).id;
+
+    const categorize = (body: Record<string, any>) =>
+      authed(api().post('/banking/categorize')).send(body);
+
+    beforeAll(async () => {
+      accountId = await createAccount('bank', 'Rec feed bank');
+      expenseAccountId = await createAccount('expense', 'Rec feed expense');
+
+      await importCsv(
+        accountId,
+        [
+          'Date,Payee,Description,Amount',
+          '2035-03-03,Hydro,Electricity,-50.00',
+          '2035-03-04,Client Inc,Deposit,75.00',
+          '2035-03-05,Metro,Groceries,-20.00',
+          '2035-04-10,Client Inc,Late deposit,30.00',
+        ].join(String.fromCharCode(10)),
+      );
+      const rows = await uncategorizedRows();
+
+      // Categorized row, on or before the statement date.
+      await categorize({
+        uncategorizedTransactionIds: [idByAmount(rows, 50)],
+        date: '2035-03-03',
+        creditAccountId: expenseAccountId,
+        transactionType: 'other_expense',
+        exchangeRate: 1,
+      }).expect(201);
+
+      // Categorized row, after the statement date.
+      await categorize({
+        uncategorizedTransactionIds: [idByAmount(rows, 30)],
+        date: '2035-04-10',
+        creditAccountId: 1014,
+        transactionType: 'owner_contribution',
+        exchangeRate: 1,
+      }).expect(201);
+
+      // Row matched to a manual journal.
+      const journal = await authed(api().post('/manual-journals'))
+        .send({
+          date: '2035-03-04',
+          reference: faker.string.uuid(),
+          journalNumber: faker.string.uuid(),
+          publish: true,
+          entries: [
+            { index: 1, credit: 0, debit: 75, accountId },
+            { index: 2, credit: 75, debit: 0, accountId: 1014 },
+          ],
+        })
+        .expect(201);
+      journalId = journal.body.id;
+      // POST /banking/matching/match can't match a balanced manual journal
+      // (it totals debit minus credit over the journal, which is always 0),
+      // so store the link the matching command would: the journal's
+      // 'ManualJournal' reference type on the bank row.
+      await linkBankRowToJournal(idByAmount(rows, 75), journalId, 75);
+
+      // A manual transaction on the same account.
+      manualId = await createOwnerContribution(accountId, 40, '2035-03-06');
+    });
+
+    it('flags categorized and matched rows as bank feed and pre-ticks them', async () => {
+      const res = await getTransactions(accountId, statementDate).expect(200);
+      const body = camelDeep(res.body);
+      const rows = body.transactions as any[];
+      const isSelected = (ref: any) =>
+        body.selected.some(
+          (s: any) =>
+            s.referenceType === ref.referenceType &&
+            Number(s.referenceId) === Number(ref.referenceId),
+        );
+
+      const journalRow = rows.find(
+        (r) =>
+          r.referenceType === 'Journal' &&
+          Number(r.referenceId) === Number(journalId),
+      );
+      expect(journalRow).toBeDefined();
+      expect(journalRow.amount).toBe(75);
+      expect(journalRow.isFromBankFeed).toBe(true);
+      expect(isSelected(journalRow)).toBe(true);
+
+      const expenseRow = rows.find((r) => r.amount === -50);
+      expect(expenseRow).toBeDefined();
+      expect(expenseRow.isFromBankFeed).toBe(true);
+      expect(isSelected(expenseRow)).toBe(true);
+
+      const manualRow = rows.find(
+        (r) => Number(r.referenceId) === Number(manualId) && r.amount === 40,
+      );
+      expect(manualRow).toBeDefined();
+      expect(manualRow.isFromBankFeed).toBe(false);
+      expect(isSelected(manualRow)).toBe(false);
+
+      expect(body.selected).toHaveLength(2);
+    });
+
+    it('does not pre-tick a bank feed row dated after the statement date', async () => {
+      const res = await getTransactions(accountId, statementDate).expect(200);
+      const body = camelDeep(res.body);
+
+      const lateRow = (body.transactions as any[]).find((r) => r.amount === 30);
+      expect(lateRow).toBeDefined();
+      expect(lateRow.isFromBankFeed).toBe(true);
+      expect(lateRow.isAfterStatementDate).toBe(true);
+      expect(
+        body.selected.some(
+          (s: any) =>
+            Number(s.referenceId) === Number(lateRow.referenceId) &&
+            s.referenceType === lateRow.referenceType,
+        ),
+      ).toBe(false);
+    });
+
+    it('counts the bank row still not in the books', async () => {
+      const res = await getSummary(accountId, statementDate).expect(200);
+
+      expect(camelDeep(res.body).uncategorizedCount).toBe(1);
     });
   });
 });

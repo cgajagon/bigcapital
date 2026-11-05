@@ -11,7 +11,12 @@ import { TenancyContext } from '@/modules/Tenancy/TenancyContext.service';
 import { AccountingBasis } from '@/common/types/AccountingBasis';
 import { BankReconciliation } from './models/BankReconciliation';
 import { BankReconciliationTransaction } from './models/BankReconciliationTransaction';
-import { netAmountOnAccount, refKey, validateAccount } from './_utils';
+import {
+  netAmountOnAccount,
+  refKey,
+  toLedgerReferenceType,
+  validateAccount,
+} from './_utils';
 import {
   AccountNormal,
   BankReconciliationStatus,
@@ -246,7 +251,7 @@ export class BankReconciliationRepository {
     for (const row of matched) {
       add(
         refKey({
-          referenceType: row.referenceType,
+          referenceType: toLedgerReferenceType(row.referenceType),
           referenceId: row.referenceId,
         }),
         row.uncategorizedTransactionId,

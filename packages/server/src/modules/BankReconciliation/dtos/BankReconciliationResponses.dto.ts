@@ -47,7 +47,11 @@ export class BankReconciliationChangedItemDto {
   @ApiProperty({ nullable: true, type: String })
   transactionTypeKey: string | null;
 
-  @ApiProperty({ description: 'Translated transaction type.', nullable: true })
+  @ApiProperty({
+    description: 'Translated transaction type.',
+    nullable: true,
+    type: String,
+  })
   transactionType: string | null;
 
   @ApiProperty({ nullable: true, type: String })
@@ -125,7 +129,11 @@ export class BankReconciliationTransactionRowDto extends BankReconciliationRefDt
   @ApiProperty({ example: '2035 Jan 12' })
   formattedDate: string;
 
-  @ApiProperty({ example: 'Payment received', nullable: true })
+  @ApiProperty({
+    example: 'Payment received',
+    nullable: true,
+    type: String,
+  })
   transactionType: string | null;
 
   @ApiProperty({ nullable: true, type: String })
@@ -214,7 +222,11 @@ export class BankReconciliationDetailTransactionDto {
   @ApiProperty({ nullable: true, type: String })
   transactionTypeKey: string | null;
 
-  @ApiProperty({ description: 'Translated transaction type.', nullable: true })
+  @ApiProperty({
+    description: 'Translated transaction type.',
+    nullable: true,
+    type: String,
+  })
   transactionType: string | null;
 
   @ApiProperty({ nullable: true, type: String })

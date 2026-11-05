@@ -8,6 +8,7 @@ import {
   roundAmount,
   selectReconciliationsToUndo,
   shouldTakeOver,
+  toLedgerReferenceType,
   validateAccount,
   validateFinish,
   validateStatementDate,
@@ -275,5 +276,18 @@ describe('preselectRefs', () => {
       selected: [{ referenceType: 'A', referenceId: 1 }],
       droppedCount: 1,
     });
+  });
+});
+
+describe('toLedgerReferenceType', () => {
+  it('maps the matching type of manual journals to the ledger type', () => {
+    expect(toLedgerReferenceType('ManualJournal')).toBe('Journal');
+  });
+
+  it('returns every other type unchanged', () => {
+    expect(toLedgerReferenceType('PaymentReceive')).toBe('PaymentReceive');
+    expect(toLedgerReferenceType('CashflowTransaction')).toBe(
+      'CashflowTransaction',
+    );
   });
 });

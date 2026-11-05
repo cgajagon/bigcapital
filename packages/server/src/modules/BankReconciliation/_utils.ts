@@ -14,6 +14,13 @@ export const refKey = (ref: ReconcileRef): string =>
   `${ref.referenceType}-${ref.referenceId}`;
 
 /**
+ * Ledger rows store the source transaction type, which differs from the type
+ * stored by bank matching for manual journals ('ManualJournal' vs 'Journal').
+ */
+export const toLedgerReferenceType = (referenceType: string): string =>
+  referenceType === 'ManualJournal' ? 'Journal' : referenceType;
+
+/**
  * Rounds to 2 decimals, half away from zero. Robust to binary floating point
  * (1.005 is stored as 1.00499999999999989...): the scaled value is first
  * normalised to 15 significant digits, then rounded on the absolute value.
