@@ -330,7 +330,11 @@ export const valueParser =
       _value = get(option, 'key');
       // Parses the numeric value.
     } else if (field.fieldType === 'number') {
-      _value = multiNumberParse(value);
+      // A cell holding only spaces is empty, not a number to parse.
+      _value =
+        typeof value === 'string' && value.trim() === ''
+          ? undefined
+          : multiNumberParse(value);
       // Parses the relation value.
     } else if (field.fieldType === 'relation') {
       const RelationModel = modelResolver(field.relationModel);

@@ -1,4 +1,23 @@
-import { aggregate, getImportResultCounts } from './_utils';
+import { aggregate, getImportResultCounts, valueParser } from './_utils';
+
+describe('valueParser number fields', () => {
+  const parse = valueParser(
+    { amount: { fieldType: 'number' } } as any,
+    () => null,
+  );
+
+  it('reads an empty cell as empty', async () => {
+    expect(await parse('', 'amount')).toBeUndefined();
+  });
+
+  it('reads a cell holding only spaces as empty', async () => {
+    expect(await parse('   ', 'amount')).toBeUndefined();
+  });
+
+  it('still parses numbers with thousands separators', async () => {
+    expect(await parse('1,234.50', 'amount')).toBe(1234.5);
+  });
+});
 
 describe('getImportResultCounts', () => {
   const success = [
