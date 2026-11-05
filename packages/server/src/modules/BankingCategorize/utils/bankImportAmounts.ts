@@ -30,7 +30,7 @@ const COLUMNS = [
   { key: 'withdrawal', label: 'Withdrawal' },
 ] as const;
 
-type ColumnKey = (typeof COLUMNS)[number]['key'];
+export type ColumnKey = (typeof COLUMNS)[number]['key'];
 
 const isEmptyValue = (value: unknown) =>
   value === undefined || value === null || value === '' || value === 0;
@@ -49,6 +49,30 @@ export const getBankAmountLayout = (
   mapping.some((map) => map.to === 'deposit' || map.to === 'withdrawal')
     ? 'depositWithdrawal'
     : 'amount';
+
+/**
+ * Retrieves the Deposit/Withdrawal columns the import's mapping uses.
+ * @param {Array<{ to: string }>} mapping
+ * @returns {ColumnKey[]}
+ */
+export const getMappedAmountColumns = (
+  mapping: Array<{ to: string }>,
+): ColumnKey[] =>
+  COLUMNS.map(({ key }) => key).filter((key) =>
+    mapping.some((map) => map.to === key),
+  );
+
+/**
+ * Retrieves the message for a row with no amount, naming only the columns
+ * that were mapped (both when not told).
+ */
+const missingAmountMessage = (mappedColumns?: ColumnKey[]) => {
+  const names = COLUMNS.filter(
+    ({ key }) => !mappedColumns?.length || mappedColumns.includes(key),
+  ).map(({ label }) => label.toLowerCase());
+
+  return `This row has no ${names.join(' or ')}.`;
+};
 
 /**
  * Decides, over the whole file, how each column writes its numbers.
@@ -74,11 +98,16 @@ export const getColumnSignModes = (
  * withdrawal (by each column's sign mode), negated when `reverseSigns` is set.
  * Rows that can't give an amount are reported in `rowErrors`.
  * @param {Record<string, any>[]} rows - Parsed rows, in file order.
- * @param {{ layout: BankAmountLayout; reverseSigns: boolean }} options
+ * @param {{ layout: BankAmountLayout; reverseSigns: boolean; mappedColumns?: ColumnKey[] }} options
+ *   `mappedColumns` names the columns in the "no amount" message (both by default).
  */
 export const prepareBankRows = (
   rows: Record<string, any>[],
-  options: { layout: BankAmountLayout; reverseSigns: boolean },
+  options: {
+    layout: BankAmountLayout;
+    reverseSigns: boolean;
+    mappedColumns?: ColumnKey[];
+  },
 ): { rows: Record<string, any>[]; rowErrors: BankRowError[] } => {
   const sign = options.reverseSigns ? -1 : 1;
 
@@ -122,7 +151,7 @@ export const prepareBankRows = (
     if (depositValue === 0 && withdrawalValue === 0) {
       return error(
         BANK_AMOUNT_ERRORS.NONE,
-        'This row has no deposit or withdrawal.',
+        missingAmountMessage(options.mappedColumns),
       );
     }
     return { ...rest, amount: sign * (depositValue - withdrawalValue) };

@@ -2,6 +2,7 @@ import {
   BANK_AMOUNT_ERRORS,
   getBankAmountLayout,
   getColumnSignModes,
+  getMappedAmountColumns,
   prepareBankRows,
   summarizeBankAmounts,
 } from './bankImportAmounts';
@@ -25,6 +26,17 @@ describe('getBankAmountLayout', () => {
       'depositWithdrawal',
     );
     expect(getBankAmountLayout([{ to: 'deposit' }])).toBe('depositWithdrawal');
+  });
+});
+
+describe('getMappedAmountColumns', () => {
+  it('lists the deposit and withdrawal columns that are mapped', () => {
+    expect(
+      getMappedAmountColumns([{ to: 'date' }, { to: 'withdrawal' }]),
+    ).toEqual(['withdrawal']);
+    expect(
+      getMappedAmountColumns([{ to: 'withdrawal' }, { to: 'deposit' }]),
+    ).toEqual(['deposit', 'withdrawal']);
   });
 });
 
@@ -65,6 +77,16 @@ describe('getColumnSignModes', () => {
         { deposit: undefined, withdrawal: -5 },
       ]),
     ).toEqual({ deposit: 'asWritten', withdrawal: 'negativesArePositive' });
+  });
+
+  it('keeps an all-negative column read as positive when it also holds a non-number', () => {
+    expect(
+      getColumnSignModes([
+        { withdrawal: -5 },
+        { withdrawal: NaN },
+        { withdrawal: -12 },
+      ]).withdrawal,
+    ).toBe('negativesArePositive');
   });
 });
 
@@ -125,6 +147,22 @@ describe('prepareBankRows with deposit and withdrawal columns', () => {
         errorMessage: 'This row has no deposit or withdrawal.',
       },
     ]);
+  });
+
+  it('names only the withdrawal column when it is the only one mapped', () => {
+    const { rowErrors } = prepareBankRows([{}], {
+      ...twoColumns,
+      mappedColumns: ['withdrawal'],
+    });
+    expect(rowErrors[0].errorMessage).toBe('This row has no withdrawal.');
+  });
+
+  it('names only the deposit column when it is the only one mapped', () => {
+    const { rowErrors } = prepareBankRows([{}], {
+      ...twoColumns,
+      mappedColumns: ['deposit'],
+    });
+    expect(rowErrors[0].errorMessage).toBe('This row has no deposit.');
   });
 
   it('rejects a value that is not a number, naming the column', () => {

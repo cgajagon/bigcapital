@@ -21,6 +21,7 @@ import { ImportModelShape } from '../../Import/models/Import';
 import { ServiceError } from '../../Items/ServiceError';
 import {
   getBankAmountLayout,
+  getMappedAmountColumns,
   prepareBankRows,
   summarizeBankAmounts,
 } from '../utils/bankImportAmounts';
@@ -121,8 +122,11 @@ export class UncategorizedTransactionsImportable extends Importable {
     parsedData: Record<string, any>[],
     importFile: ImportModelShape,
   ): Promise<ImportPreparedRows> {
+    const mapping = importFile.mappingParsed || [];
+
     return prepareBankRows(parsedData, {
-      layout: getBankAmountLayout(importFile.mappingParsed || []),
+      layout: getBankAmountLayout(mapping),
+      mappedColumns: getMappedAmountColumns(mapping),
       reverseSigns: importFile.paramsParsed?.reverseSigns === true,
     });
   }

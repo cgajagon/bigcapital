@@ -55,6 +55,8 @@ export abstract class Importable {
    * Prepares the parsed rows once per import, before anything else sees them
    * (skips, transform, validation). Rows it rejects are reported as errors and
    * not imported. Rows are passed through unchanged by default.
+   * The returned `rows` must keep the length and order of `parsedData`: a
+   * row's index is its row in the file (row numbers, skips and errors use it).
    * @param {Record<string, any>[]} parsedData - Parsed rows, in file order.
    * @param {ImportModelShape} _importFile - The import being run.
    * @returns {Promise<ImportPreparedRows>}

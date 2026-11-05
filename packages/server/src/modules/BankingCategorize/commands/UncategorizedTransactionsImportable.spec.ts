@@ -114,6 +114,20 @@ describe('UncategorizedTransactionsImportable.validateMapping', () => {
 describe('UncategorizedTransactionsImportable.prepareRows', () => {
   const { importable } = makeImportable([]);
 
+  it('names only the mapped column when a row has no amount', async () => {
+    const { rowErrors } = await importable.prepareRows(
+      [{ date: '2026-02-02' }],
+      {
+        mappingParsed: [
+          { from: 'Date', to: 'date' },
+          { from: 'Purchases', to: 'withdrawal' },
+        ],
+        paramsParsed: { accountId: 1 },
+      } as unknown as ImportModelShape,
+    );
+    expect(rowErrors[0].errorMessage).toBe('This row has no withdrawal.');
+  });
+
   it('turns deposit/withdrawal columns into a signed amount', async () => {
     const { rows, rowErrors } = await importable.prepareRows(
       [{ date: '2026-02-02', withdrawal: 5 }],
