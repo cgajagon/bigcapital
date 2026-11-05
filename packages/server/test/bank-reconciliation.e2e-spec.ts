@@ -1088,6 +1088,202 @@ describe('Bank reconciliation (e2e)', () => {
       });
     });
 
+    describe('take-over', () => {
+      const feedRowId = async (accountId: number) => {
+        const res = await authed(
+          api().get(`/banking/uncategorized/accounts/${accountId}`),
+        ).expect(200);
+        return (camelDeep(res.body).data as any[])[0].id as number;
+      };
+
+      const categorizeRow = (
+        rowId: number,
+        creditAccountId: number,
+        date: string,
+      ) =>
+        authed(api().post('/banking/categorize')).send({
+          uncategorizedTransactionIds: [rowId],
+          date,
+          creditAccountId,
+          transactionType: 'other_expense',
+          exchangeRate: 1,
+        });
+
+      const matchRow = (rowId: number, expenseId: number) =>
+        authed(api().post('/banking/matching/match')).send({
+          uncategorizedTransactions: [rowId],
+          matchedTransactions: [
+            { referenceType: 'Expense', referenceId: expenseId },
+          ],
+        });
+
+      const feedCsv = (date: string) =>
+        [
+          'Date,Payee,Description,Amount',
+          `${date},Hydro,Electricity,-42.00`,
+        ].join(String.fromCharCode(10));
+
+      const unmatchRow = (rowId: number) =>
+        authed(api().patch(`/banking/matching/unmatch/${rowId}`)).expect((r) =>
+          expect(r.status).toBeLessThan(300),
+        );
+
+      /**
+       * Imports one -42.00 bank row, matches it to a new expense and
+       * finishes a reconciliation with that expense.
+       */
+      const reconciledMatch = async (date: string, statementDate: string) => {
+        const accountId = await createAccount('bank', 'Rec take bank');
+        const expenseAccountId = await createAccount('expense', 'Rec take exp');
+        await importCsv(accountId, feedCsv(date));
+        const rowId = await feedRowId(accountId);
+        const expenseX = await createExpenseFrom(
+          accountId,
+          expenseAccountId,
+          42,
+          date,
+        );
+        await matchRow(rowId, expenseX).expect((r) =>
+          expect(r.status).toBeLessThan(300),
+        );
+
+        const ref = await refByAmount(accountId, statementDate, -42);
+        expect(Number(ref.referenceId)).toBe(Number(expenseX));
+        const res = await finish(
+          accountId,
+          input(statementDate, -42, [ref]),
+        ).expect(201);
+        await eventually(
+          () => detailOf(res.body.id),
+          (body) => body.transactions.length === 1,
+        );
+        return {
+          accountId,
+          expenseAccountId,
+          rowId,
+          expenseX,
+          reconciliationId: res.body.id as number,
+        };
+      };
+
+      it('moves the R to the cashflow transaction categorized again', async () => {
+        const accountId = await createAccount('bank', 'Rec take bank');
+        const expenseAccountId = await createAccount('expense', 'Rec take exp');
+        await importCsv(accountId, feedCsv('2038-01-05'));
+        const rowId = await feedRowId(accountId);
+        await categorizeRow(rowId, expenseAccountId, '2038-01-05').expect(201);
+
+        const ref = await refByAmount(accountId, '2038-01-31', -42);
+        const res = await finish(
+          accountId,
+          input('2038-01-31', -42, [ref]),
+        ).expect(201);
+        await eventually(
+          () => detailOf(res.body.id),
+          (body) => body.transactions.length === 1,
+        );
+
+        await authed(api().delete(`/banking/categorize/${rowId}`)).expect(200);
+        await categorizeRow(rowId, expenseAccountId, '2038-01-05').expect(201);
+
+        const detail = await eventually(
+          () => detailOf(res.body.id),
+          (body) =>
+            body.transactions[0]?.isDeleted === false &&
+            Number(body.transactions[0].referenceId) !==
+              Number(ref.referenceId),
+        );
+        expect(detail.transactions).toHaveLength(1);
+        expect(detail.transactions[0].isDeleted).toBe(false);
+        expect(detail.transactions[0].referenceType).toBe(
+          'CashflowTransaction',
+        );
+        expect(Number(detail.transactions[0].referenceId)).not.toBe(
+          Number(ref.referenceId),
+        );
+
+        const summary = await summaryOf(accountId, '2038-02-28');
+        expect(summary.mismatch).toBeNull();
+
+        const listed = await transactionsOf(accountId, '2038-02-28');
+        expect(listed.transactions.some((r: any) => r.amount === -42)).toBe(
+          false,
+        );
+      });
+
+      it('moves the R to the expense a bank row is matched to again', async () => {
+        const {
+          accountId,
+          expenseAccountId,
+          rowId,
+          expenseX,
+          reconciliationId,
+        } = await reconciledMatch('2038-03-05', '2038-03-31');
+
+        await unmatchRow(rowId);
+        await authed(api().delete(`/expenses/${expenseX}`)).expect(200);
+        const expenseY = await createExpenseFrom(
+          accountId,
+          expenseAccountId,
+          42,
+          '2038-03-05',
+        );
+        await matchRow(rowId, expenseY).expect((r) =>
+          expect(r.status).toBeLessThan(300),
+        );
+
+        const detail = await eventually(
+          () => detailOf(reconciliationId),
+          (body) =>
+            Number(body.transactions[0]?.referenceId) === Number(expenseY),
+        );
+        expect(detail.transactions[0].referenceType).toBe('Expense');
+        expect(Number(detail.transactions[0].referenceId)).toBe(
+          Number(expenseY),
+        );
+        expect(detail.transactions[0].isDeleted).toBe(false);
+
+        const summary = await summaryOf(accountId, '2038-04-30');
+        expect(summary.mismatch).toBeNull();
+      });
+
+      it('does not take over when the old expense still exists', async () => {
+        const {
+          accountId,
+          expenseAccountId,
+          rowId,
+          expenseX,
+          reconciliationId,
+        } = await reconciledMatch('2038-05-05', '2038-05-31');
+
+        await unmatchRow(rowId);
+        const expenseY = await createExpenseFrom(
+          accountId,
+          expenseAccountId,
+          42,
+          '2038-05-05',
+        );
+        await matchRow(rowId, expenseY).expect((r) =>
+          expect(r.status).toBeLessThan(300),
+        );
+
+        const detail = await detailOf(reconciliationId);
+        expect(Number(detail.transactions[0].referenceId)).toBe(
+          Number(expenseX),
+        );
+        expect(detail.transactions[0].isDeleted).toBe(false);
+
+        const listed = await transactionsOf(accountId, '2038-06-30');
+        const rowY = listed.transactions.find(
+          (r: any) =>
+            r.referenceType === 'Expense' &&
+            Number(r.referenceId) === Number(expenseY),
+        );
+        // Reconciled transactions are not listed, so Y listed = unreconciled.
+        expect(rowY).toBeDefined();
+      });
+    });
+
     describe('credit card account', () => {
       it('counts a charge as +80 and rejects the negated ending balance', async () => {
         const cardId = await createAccount('credit-card', 'Rec write card');
