@@ -11,6 +11,16 @@ import { formatBankTransactionsStatus } from './_utils';
 import { GetBankAccountTransactionsRepository } from './GetBankAccountTransactionsRepo.service';
 import { runningBalance } from '@/utils/running-balance';
 import { I18nService } from 'nestjs-i18n';
+import {
+  refKey,
+  resolveReconcileStatus,
+} from '@/modules/BankReconciliation/_utils';
+
+const RECONCILE_STATUS_LABELS = {
+  reconciled: 'R',
+  cleared: 'C',
+  none: '',
+} as const;
 
 export class GetBankAccountTransactions extends FinancialSheet {
   private runningBalance: any;
@@ -97,6 +107,10 @@ export class GetBankAccountTransactions extends FinancialSheet {
     const status = this.getTransactionStatus(transaction);
     const uncategorizedTransactionId =
       this.getUncategorizedTransId(transaction);
+    const reconcileStatus = resolveReconcileStatus(
+      refKey(transaction),
+      this.repo.reconcileStatusSets,
+    );
 
     return {
       date: transaction.date,
@@ -124,6 +138,8 @@ export class GetBankAccountTransactions extends FinancialSheet {
       status,
       formattedStatus: formatBankTransactionsStatus(status),
       uncategorizedTransactionId,
+      reconcileStatus,
+      formattedReconcileStatus: RECONCILE_STATUS_LABELS[reconcileStatus],
     };
   };
 

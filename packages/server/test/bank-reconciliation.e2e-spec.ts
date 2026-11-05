@@ -1303,4 +1303,156 @@ describe('Bank reconciliation (e2e)', () => {
       });
     });
   });
+
+  describe('register status', () => {
+    let accountId: number;
+    let expenseAccountId: number;
+
+    const register = async () => {
+      const res = await authed(
+        api().get('/banking/transactions').query({ accountId }),
+      ).expect(200);
+      return camelDeep(res.body).transactions as any[];
+    };
+    const rowOf = (rows: any[], deposit: number, withdrawal: number) => {
+      const row = rows.find(
+        (r) =>
+          Number(r.deposit) === deposit && Number(r.withdrawal) === withdrawal,
+      );
+      expect(row).toBeDefined();
+      return row;
+    };
+    const refOf = (row: any) => ({
+      referenceType: row.referenceType,
+      referenceId: row.referenceId,
+    });
+    const uncategorizedIds = async () => {
+      const res = await authed(
+        api().get(`/banking/uncategorized/accounts/${accountId}`),
+      ).expect(200);
+      return camelDeep(res.body).data as any[];
+    };
+    const categorize = (id: number, date: string) =>
+      authed(api().post('/banking/categorize'))
+        .send({
+          uncategorizedTransactionIds: [id],
+          date,
+          creditAccountId: expenseAccountId,
+          transactionType: 'other_expense',
+          exchangeRate: 1,
+        })
+        .expect(201);
+    // Reads straight after a write can rarely be stale (upstream #1616).
+    const eventually = async <T>(
+      read: () => Promise<T>,
+      done: (value: T) => boolean,
+    ): Promise<T> => {
+      let value = await read();
+      for (let i = 0; i < 10 && !done(value); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        value = await read();
+      }
+      return value;
+    };
+
+    let reconciliationId: number;
+
+    beforeAll(async () => {
+      accountId = await createAccount('bank', 'Rec status bank');
+      expenseAccountId = await createAccount('expense', 'Rec status exp');
+
+      await importCsv(
+        accountId,
+        [
+          'Date,Payee,Description,Amount',
+          '2039-01-03,Hydro,Electricity,-50.00',
+          '2039-01-05,Metro,Groceries,-20.00',
+        ].join(String.fromCharCode(10)),
+      );
+      const feed = await uncategorizedIds();
+      const idByAmount = (amount: number) =>
+        feed.find((row) => Math.abs(Number(row.amount)) === amount).id;
+      await categorize(idByAmount(50), '2039-01-03');
+      await categorize(idByAmount(20), '2039-01-05');
+
+      await createOwnerContribution(accountId, 25, '2039-01-10');
+      await createOwnerContribution(accountId, 40, '2039-02-10');
+      await createOwnerContribution(accountId, 70, '2039-02-12');
+
+      // Reconcile the 50 bank row together with the manual 25.
+      const rows = await register();
+      const finished = await authed(
+        api().post(`/banking/reconciliations/accounts/${accountId}/finish`),
+      )
+        .send({
+          statementDate: '2039-01-31',
+          endingBalance: -25,
+          selectedTransactions: [
+            refOf(rowOf(rows, 0, 50)),
+            refOf(rowOf(rows, 25, 0)),
+          ],
+        })
+        .expect(201);
+      reconciliationId = finished.body.id;
+
+      // The manual 40 is ticked in a saved draft of the next statement.
+      await authed(
+        api().put(`/banking/reconciliations/accounts/${accountId}/draft`),
+      )
+        .send({
+          statementDate: '2039-02-28',
+          endingBalance: 15,
+          selectedTransactions: [refOf(rowOf(rows, 40, 0))],
+        })
+        .expect(200);
+    });
+
+    it('shows R, C and blank, and leaves the existing status alone', async () => {
+      const rows = await eventually(register, (list) =>
+        list.some((r) => r.formattedReconcileStatus === 'R'),
+      );
+
+      const reconciledBank = rowOf(rows, 0, 50);
+      expect(reconciledBank.reconcileStatus).toBe('reconciled');
+      expect(reconciledBank.formattedReconcileStatus).toBe('R');
+      expect(reconciledBank.status).toBe('categorized');
+
+      const clearedBank = rowOf(rows, 0, 20);
+      expect(clearedBank.reconcileStatus).toBe('cleared');
+      expect(clearedBank.formattedReconcileStatus).toBe('C');
+      expect(clearedBank.status).toBe('categorized');
+
+      const reconciledManual = rowOf(rows, 25, 0);
+      expect(reconciledManual.formattedReconcileStatus).toBe('R');
+      expect(reconciledManual.status).toBe('manual');
+
+      const draftTicked = await eventually(
+        async () => rowOf(await register(), 40, 0),
+        (row) => row.formattedReconcileStatus === 'C',
+      );
+      expect(draftTicked.reconcileStatus).toBe('cleared');
+      expect(draftTicked.formattedReconcileStatus).toBe('C');
+      expect(draftTicked.status).toBe('manual');
+
+      const untickedManual = rowOf(rows, 70, 0);
+      expect(untickedManual.reconcileStatus).toBe('none');
+      expect(untickedManual.formattedReconcileStatus).toBe('');
+      expect(untickedManual.status).toBe('manual');
+    });
+
+    it('goes back to C for a bank row and blank for a manual one after undo', async () => {
+      await authed(
+        api().post(`/banking/reconciliations/${reconciliationId}/undo`),
+      ).expect(201);
+
+      const rows = await eventually(
+        register,
+        (list) => !list.some((r) => r.formattedReconcileStatus === 'R'),
+      );
+      expect(rowOf(rows, 0, 50).formattedReconcileStatus).toBe('C');
+      expect(rowOf(rows, 25, 0).formattedReconcileStatus).toBe('');
+      // Undo also discards the draft, so the 40 is no longer ticked.
+      expect(rowOf(rows, 40, 0).formattedReconcileStatus).toBe('');
+    });
+  });
 });

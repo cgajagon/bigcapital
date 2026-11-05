@@ -167,4 +167,7 @@ export interface ICashflowAccountTransaction {
   formattedStatus: string;
 
   uncategorizedTransactionId: number;
+
+  reconcileStatus: 'reconciled' | 'cleared' | 'none';
+  formattedReconcileStatus: 'R' | 'C' | '';
 }
