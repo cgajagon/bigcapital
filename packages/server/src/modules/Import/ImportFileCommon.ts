@@ -7,6 +7,7 @@ import {
   ImportInsertError,
   ImportOperError,
   ImportOperSuccess,
+  ImportRowError,
   ImportRowSkip,
   ImportableContext,
 } from './interfaces';
@@ -48,8 +49,16 @@ export class ImportFileCommon {
     const success: ImportOperSuccess[] = [];
     const failed: ImportOperError[] = [];
 
-    // Rows the importable asks to skip, decided once with all parsed rows.
-    const skippedRows = await importable.getSkippedRows(parsedData, importFile);
+    // Rows as the importable prepared them, decided once with all parsed rows,
+    // then the rows it asks to skip.
+    const { rows, rowErrors } = await importable.prepareRows(
+      parsedData,
+      importFile,
+    );
+    const rowErrorsByIndex = new Map<number, ImportRowError>(
+      rowErrors.map((rowError) => [rowError.index, rowError]),
+    );
+    const skippedRows = await importable.getSkippedRows(rows, importFile);
     const skippedRowsByIndex = new Map<number, ImportRowSkip>(
       skippedRows.map((skipped) => [skipped.index, skipped]),
     );
@@ -61,6 +70,19 @@ export class ImportFileCommon {
         rowNumber,
         uniqueValue,
       };
+      const rowError = rowErrorsByIndex.get(index);
+
+      if (rowError) {
+        const error: ImportInsertError[] = [
+          {
+            errorCode: rowError.errorCode,
+            errorMessage: rowError.errorMessage,
+            ...errorContext,
+          },
+        ];
+        failed.push({ index, error });
+        return;
+      }
       const skipped = skippedRowsByIndex.get(index);
 
       if (skipped) {
@@ -116,7 +138,7 @@ export class ImportFileCommon {
         failed.push({ index, error });
       }
     };
-    await bluebird.map(parsedData, importAsync, { concurrency });
+    await bluebird.map(rows, importAsync, { concurrency });
 
     return [success, failed];
   }

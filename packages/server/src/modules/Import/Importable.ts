@@ -1,6 +1,11 @@
 import { Knex } from 'knex';
 import * as Yup from 'yup';
-import { ImportableContext, ImportRowSkip } from './interfaces';
+import {
+  ImportableContext,
+  ImportOperSuccess,
+  ImportPreparedRows,
+  ImportRowSkip,
+} from './interfaces';
 import { ImportModelShape } from './models/Import';
 
 export abstract class Importable {
@@ -27,6 +32,33 @@ export abstract class Importable {
     _context: ImportableContext,
   ) {
     return createDTO;
+  }
+
+  /**
+   * Prepares the parsed rows once per import, before anything else sees them
+   * (skips, transform, validation). Rows it rejects are reported as errors and
+   * not imported. Rows are passed through unchanged by default.
+   * @param {Record<string, any>[]} parsedData - Parsed rows, in file order.
+   * @param {ImportModelShape} _importFile - The import being run.
+   * @returns {Promise<ImportPreparedRows>}
+   */
+  public async prepareRows(
+    parsedData: Record<string, any>[],
+    _importFile: ImportModelShape,
+  ): Promise<ImportPreparedRows> {
+    return { rows: parsedData, rowErrors: [] };
+  }
+
+  /**
+   * Retrieves totals of the rows to be created, shown in the import preview.
+   * Nothing by default.
+   * @param {ImportOperSuccess[]} _success - The rows to be created.
+   * @returns {Record<string, number> | undefined}
+   */
+  public getPreviewSummary(
+    _success: ImportOperSuccess[],
+  ): Record<string, number> | undefined {
+    return undefined;
   }
 
   /**

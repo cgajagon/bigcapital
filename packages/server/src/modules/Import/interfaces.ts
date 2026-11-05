@@ -52,6 +52,10 @@ export interface ImportFilePreviewPOJO {
   errors: ImportInsertError[];
   unmappedColumns: string[];
   unmappedColumnsCount: number;
+  /**
+   * Importable-specific totals of the rows to be created, when it has any.
+   */
+  summary?: Record<string, number>;
 }
 
 export interface ImportOperSuccess {
@@ -66,6 +70,24 @@ export interface ImportOperError {
    * True when the importable chose to skip the row (not an error).
    */
   skipped?: boolean;
+}
+
+/**
+ * A row the importable reports as an error before importing, with the reason.
+ */
+export interface ImportRowError {
+  index: number;
+  errorCode: string;
+  errorMessage: string;
+}
+
+/**
+ * The parsed rows after the importable prepared them, plus the rows it
+ * rejected while preparing.
+ */
+export interface ImportPreparedRows {
+  rows: Record<string, any>[];
+  rowErrors: ImportRowError[];
 }
 
 /**

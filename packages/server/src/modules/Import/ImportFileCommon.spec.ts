@@ -72,4 +72,66 @@ describe('ImportFileCommon.import', () => {
     expect(importable.getSkippedRows).toHaveBeenCalledTimes(1);
     expect(importable.getSkippedRows).toHaveBeenCalledWith(rows, importFile);
   });
+
+  it('imports the rows prepareRows returns and checks those rows for skips', async () => {
+    const importable = new SkippingImportable();
+    importable.getSkippedRows.mockResolvedValue([]);
+    const prepared = rows.map((row) => ({ amount: row.amount * 10 }));
+    importable.prepareRows = jest.fn(async () => ({
+      rows: prepared,
+      rowErrors: [],
+    }));
+    const service = makeService(importable);
+
+    await service.import(importFile, rows);
+
+    const importedDTOs = importable.importable.mock.calls.map(
+      (call) => call[0],
+    );
+    expect(importedDTOs).toEqual([
+      { amount: 10 },
+      { amount: 20 },
+      { amount: 30 },
+    ]);
+    expect(importable.prepareRows).toHaveBeenCalledWith(rows, importFile);
+    expect(importable.getSkippedRows).toHaveBeenCalledWith(
+      prepared,
+      importFile,
+    );
+  });
+
+  it('reports prepareRows row errors as errors without importing them', async () => {
+    const importable = new SkippingImportable();
+    importable.getSkippedRows.mockResolvedValue([
+      { index: 0, errorCode: 'DuplicateBankTransaction', errorMessage: 'dup' },
+    ]);
+    importable.prepareRows = jest.fn(async (parsed: Record<string, any>[]) => ({
+      rows: parsed,
+      rowErrors: [
+        { index: 0, errorCode: 'BankAmountMissing', errorMessage: 'x' },
+      ],
+    }));
+    const service = makeService(importable);
+
+    const [success, failed] = await service.import(importFile, rows);
+
+    const importedDTOs = importable.importable.mock.calls.map(
+      (call) => call[0],
+    );
+    expect(importedDTOs).toEqual([{ amount: 2 }, { amount: 3 }]);
+    expect(success).toHaveLength(2);
+    expect(failed).toEqual([
+      {
+        index: 0,
+        error: [
+          {
+            errorCode: 'BankAmountMissing',
+            errorMessage: 'x',
+            rowNumber: 1,
+            uniqueValue: '',
+          },
+        ],
+      },
+    ]);
+  });
 });

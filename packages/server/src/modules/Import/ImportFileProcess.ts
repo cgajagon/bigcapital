@@ -16,6 +16,7 @@ import { UnitOfWork } from '../Tenancy/TenancyDB/UnitOfWork.service';
 import { ServiceError } from '../Items/ServiceError';
 import { ImportModel } from './models/Import';
 import { TenancyContext } from '../Tenancy/TenancyContext.service';
+import { ImportableRegistry } from './ImportableRegistry';
 
 @Injectable()
 export class ImportFileProcess {
@@ -25,6 +26,7 @@ export class ImportFileProcess {
     private readonly importParser: ImportFileDataTransformer,
     private readonly uow: UnitOfWork,
     private readonly tenancyContext: TenancyContext,
+    private readonly importableRegistry: ImportableRegistry,
 
     @Inject(ImportModel.name)
     private readonly importModel: typeof ImportModel,
@@ -90,6 +92,8 @@ export class ImportFileProcess {
       successedImport,
       failedImport,
     );
+    const importable = await this.importableRegistry.getImportable(resource);
+    const summary = importable.getPreviewSummary(successedImport);
 
     return {
       resource,
@@ -100,6 +104,7 @@ export class ImportFileProcess {
       errors,
       unmappedColumns: unmappedColumns,
       unmappedColumnsCount: unmappedColumns.length,
+      ...(summary ? { summary } : {}),
     };
   }
 }
