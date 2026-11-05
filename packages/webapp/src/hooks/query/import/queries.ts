@@ -94,11 +94,14 @@ export function useImportFileMapping(
     mutationFn: ([importId, values]: [string, ImportMappingBody]) =>
       importMapping(fetcher, importId, values),
     onSuccess: () => {
+      // A flat prefix key: wrapping it in another array never matches the
+      // cached ['ImportPreview', id] query, so a re-mapped import showed the
+      // old preview (and, for bank imports, the old money in/out totals).
       queryClient.invalidateQueries({
-        queryKey: [importKeys.preview('').slice(0, 1)],
+        queryKey: importKeys.preview('').slice(0, 1),
       });
       queryClient.invalidateQueries({
-        queryKey: [importKeys.fileMeta('').slice(0, 1)],
+        queryKey: importKeys.fileMeta('').slice(0, 1),
       });
     },
   });
