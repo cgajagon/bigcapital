@@ -1,3 +1,4 @@
+import { UniqueViolationError } from 'objection';
 import {
   AccountNormal,
   ChangedReconciledItem,
@@ -216,7 +217,13 @@ export const preselectRefs = (
 };
 
 /**
- * Whether the error is a MySQL unique-key violation (ER_DUP_ENTRY, 1062).
+ * Whether the error is a unique-key violation. Objection wraps database
+ * errors (UniqueViolationError, native error under `nativeError`); a raw
+ * knex/MySQL error carries `code`/`errno` itself (ER_DUP_ENTRY, 1062).
  */
 export const isDuplicateEntryError = (error: any): boolean =>
-  error?.code === 'ER_DUP_ENTRY' || error?.errno === 1062;
+  error instanceof UniqueViolationError ||
+  error?.nativeError?.code === 'ER_DUP_ENTRY' ||
+  error?.nativeError?.errno === 1062 ||
+  error?.code === 'ER_DUP_ENTRY' ||
+  error?.errno === 1062;

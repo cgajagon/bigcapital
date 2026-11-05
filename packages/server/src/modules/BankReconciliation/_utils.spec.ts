@@ -1,4 +1,9 @@
 import {
+  DBError,
+  ForeignKeyViolationError,
+  UniqueViolationError,
+} from 'objection';
+import {
   computeClearedBalance,
   computeDifference,
   findChangedReconciled,
@@ -299,6 +304,49 @@ describe('isDuplicateEntryError', () => {
       true,
     );
     expect(isDuplicateEntryError({ errno: 1062 })).toBe(true);
+  });
+
+  it('recognises the error Objection wraps a duplicate key into', () => {
+    const native = Object.assign(new Error('Duplicate entry'), {
+      code: 'ER_DUP_ENTRY',
+      errno: 1062,
+    });
+    const wrapped = new UniqueViolationError(<any>{
+      nativeError: native,
+      client: 'mysql',
+      table: 'bank_reconciliation_transactions',
+      columns: ['reference_type', 'reference_id'],
+      constraint: 'uniq',
+    });
+    expect(isDuplicateEntryError(wrapped)).toBe(true);
+    // Wrapped but not typed: found through the native error.
+    expect(
+      isDuplicateEntryError(
+        new DBError(<any>{ nativeError: native, client: 'mysql' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('ignores other wrapped errors', () => {
+    const native = Object.assign(new Error('fk'), {
+      code: 'ER_NO_REFERENCED_ROW_2',
+      errno: 1452,
+    });
+    expect(
+      isDuplicateEntryError(
+        new ForeignKeyViolationError(<any>{
+          nativeError: native,
+          client: 'mysql',
+          table: 't',
+          constraint: 'c',
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isDuplicateEntryError(
+        new DBError(<any>{ nativeError: native, client: 'mysql' }),
+      ),
+    ).toBe(false);
   });
 
   it('ignores other errors', () => {
