@@ -75,8 +75,9 @@ export class ImportController {
     @Param('import_id') importId: string,
     @Body('mapping')
     mapping: Array<{ group?: string; from: string; to: string }>,
+    @Body('params') params?: Record<string, any>,
   ) {
-    return this.importResourceApp.mapping(importId, mapping);
+    return this.importResourceApp.mapping(importId, mapping, params);
   }
 
   /**

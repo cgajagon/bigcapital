@@ -9,11 +9,15 @@ import { ResourceService } from '../Resource/ResourceService';
 import { ServiceError } from '../Items/ServiceError';
 import { ERRORS } from './_utils';
 import { ImportModel } from './models/Import';
+import { ImportableRegistry } from './ImportableRegistry';
+import { ImportFileCommon } from './ImportFileCommon';
 
 @Injectable()
 export class ImportFileMapping {
   constructor(
     private readonly resource: ResourceService,
+    private readonly importableRegistry: ImportableRegistry,
+    private readonly importFileCommon: ImportFileCommon,
 
     @Inject(ImportModel.name)
     private readonly importModel: typeof ImportModel,
@@ -23,10 +27,13 @@ export class ImportFileMapping {
    * Mapping the excel sheet columns with resource columns.
    * @param {number} importId
    * @param {ImportMappingAttr} maps
+   * @param {Record<string, any>} params - Optional params merged into the
+   *   import's stored params (validated by the importable's params schema).
    */
   public async mapping(
     importId: string,
     maps: ImportMappingAttr[],
+    params?: Record<string, any>,
   ): Promise<ImportFileMapPOJO> {
     const importFile = await this.importModel
       .query()
@@ -44,11 +51,24 @@ export class ImportFileMapping {
     // Validate the date format mapping.
     this.validateDateFormatMapping(importFile.resource, maps);
 
-    const mappingStringified = JSON.stringify(maps);
+    // Let the importable refuse mappings it can't import.
+    const importable = await this.importableRegistry.getImportable(
+      importFile.resource,
+    );
+    importable.validateMapping(maps);
 
-    await this.importModel.query().findById(importFile.id).patch({
-      mapping: mappingStringified,
-    });
+    const patch: Record<string, string> = { mapping: JSON.stringify(maps) };
+
+    if (params) {
+      const mergedParams = { ...importFile.paramsParsed, ...params };
+
+      await this.importFileCommon.validateParamsSchema(
+        importFile.resource,
+        mergedParams,
+      );
+      patch.params = JSON.stringify(mergedParams);
+    }
+    await this.importModel.query().findById(importFile.id).patch(patch);
     return {
       import: {
         importId: importFile.importId,

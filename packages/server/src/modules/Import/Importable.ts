@@ -2,6 +2,7 @@ import { Knex } from 'knex';
 import * as Yup from 'yup';
 import {
   ImportableContext,
+  ImportMappingAttr,
   ImportOperSuccess,
   ImportPreparedRows,
   ImportRowSkip,
@@ -33,6 +34,13 @@ export abstract class Importable {
   ) {
     return createDTO;
   }
+
+  /**
+   * Validates the column mapping at the mapping step; throws a ServiceError
+   * to refuse it. Accepts every mapping by default.
+   * @param {ImportMappingAttr[]} _maps
+   */
+  public validateMapping(_maps: ImportMappingAttr[]): void {}
 
   /**
    * Prepares the parsed rows once per import, before anything else sees them

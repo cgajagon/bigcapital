@@ -38,9 +38,14 @@ export class ImportResourceApplication {
    * Mapping the excel sheet columns with resource columns.
    * @param {number} importId - Import id.
    * @param {ImportMappingAttr} maps
+   * @param {Record<string, any>} params - Optional params merged into the import's params.
    */
-  public async mapping(importId: string, maps: ImportMappingAttr[]) {
-    return this.importMappingService.mapping(importId, maps);
+  public async mapping(
+    importId: string,
+    maps: ImportMappingAttr[],
+    params?: Record<string, any>,
+  ) {
+    return this.importMappingService.mapping(importId, maps, params);
   }
 
   /**
