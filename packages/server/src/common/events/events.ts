@@ -797,4 +797,12 @@ export const events = {
     onSalesByItemViewed: 'onSalesByItemViewed',
     onPurchasesByItemViewed: 'onPurchasesByItemViewed',
   },
+
+  /**
+   * Bank statement reconciliation.
+   */
+  bankReconciliation: {
+    onFinished: 'onBankReconciliationFinished',
+    onUndone: 'onBankReconciliationUndone',
+  },
 };

@@ -107,7 +107,7 @@ function getAbilitiesRolesConds(role: Role) {
  * Retrieve the super admin rules.
  * @returns {}
  */
-function getSuperAdminRules() {
+export function getSuperAdminRules() {
   return [{ action: 'manage', subject: 'all' }];
 }
 

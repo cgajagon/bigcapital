@@ -112,6 +112,8 @@ export enum CashflowAction {
   Create = 'Create',
   Delete = 'Delete',
   View = 'View',
+  Reconcile = 'Reconcile',
+  UndoReconciliation = 'UndoReconciliation',
 }
 
 export interface CategorizeTransactionAsExpenseDTO {

@@ -67,6 +67,7 @@ import { BankAccountsModule } from '../BankingAccounts/BankAccounts.module';
 import { BankingTransactionsExcludeModule } from '../BankingTransactionsExclude/BankingTransactionsExclude.module';
 import { BankingTransactionsRegonizeModule } from '../BankingTranasctionsRegonize/BankingTransactionsRegonize.module';
 import { BankingMatchingModule } from '../BankingMatching/BankingMatching.module';
+import { BankReconciliationModule } from '../BankReconciliation/BankReconciliation.module';
 import { BankingTransactionsModule } from '../BankingTransactions/BankingTransactions.module';
 import { TransactionsLockingModule } from '../TransactionsLocking/TransactionsLocking.module';
 import { SettingsModule } from '../Settings/Settings.module';
@@ -235,6 +236,7 @@ import { AppThrottleModule } from './AppThrottle.module';
     BankingTransactionsRegonizeModule,
     BankingTransactionsModule,
     BankingMatchingModule,
+    BankReconciliationModule,
     BankingPlaidModule,
     BankingCategorizeModule,
     TransactionsLockingModule,
