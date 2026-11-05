@@ -14,6 +14,7 @@ import { BankReconciliationTransaction } from './models/BankReconciliationTransa
 import {
   netAmountOnAccount,
   refKey,
+  roundAmount,
   toLedgerReferenceType,
   validateAccount,
 } from './_utils';
@@ -158,6 +159,22 @@ export class BankReconciliationRepository {
       .query(trx)
       .where('account_id', accountId)
       .orderBy('id');
+  }
+
+  /**
+   * Beginning balance: the sum of the CURRENT net amounts of every
+   * transaction held by a completed reconciliation (a deleted one counts 0).
+   */
+  public computeBeginningBalance(
+    reconciledRows: ReconcileRef[],
+    ledger: Map<string, LedgerTransactionSummary>,
+  ): number {
+    return roundAmount(
+      reconciledRows.reduce(
+        (sum, row) => sum + (ledger.get(refKey(row))?.amount ?? 0),
+        0,
+      ),
+    );
   }
 
   /**

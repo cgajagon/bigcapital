@@ -559,4 +559,335 @@ describe('Bank reconciliation (e2e)', () => {
       expect(camelDeep(res.body).uncategorizedCount).toBe(1);
     });
   });
+
+  describe('write side', () => {
+    const accountPath = (accountId: number, suffix: string) =>
+      `/banking/reconciliations/accounts/${accountId}/${suffix}`;
+
+    const finish = (accountId: number, body: Record<string, any>) =>
+      authed(api().post(accountPath(accountId, 'finish'))).send(body);
+
+    const saveDraft = (accountId: number, body: Record<string, any>) =>
+      authed(api().put(accountPath(accountId, 'draft'))).send(body);
+
+    const discardDraft = (accountId: number) =>
+      authed(api().delete(accountPath(accountId, 'draft')));
+
+    const createExpenseFrom = async (
+      paymentAccountId: number,
+      expenseAccountId: number,
+      amount: number,
+      date: string,
+    ): Promise<number> => {
+      const res = await authed(api().post('/expenses'))
+        .send({
+          exchangeRate: 1,
+          description: 'Rec write expense',
+          paymentAccountId,
+          referenceNo: faker.string.alphanumeric(10),
+          publish: true,
+          paymentDate: date,
+          categories: [
+            { index: 1, expenseAccountId, amount, description: 'Rec write' },
+          ],
+          branchId: 1,
+        })
+        .expect(201);
+      return res.body.id;
+    };
+
+    /**
+     * The tickable row of the account with the given amount.
+     */
+    const refByAmount = async (
+      accountId: number,
+      statementDate: string,
+      amount: number,
+    ) => {
+      const res = await getTransactions(accountId, statementDate).expect(200);
+      const row = (camelDeep(res.body).transactions as any[]).find(
+        (r) => r.amount === amount,
+      );
+      expect(row).toBeDefined();
+      return { referenceType: row.referenceType, referenceId: row.referenceId };
+    };
+
+    const input = (
+      statementDate: string,
+      endingBalance: any,
+      selectedTransactions: any[],
+    ) => ({ statementDate, endingBalance, selectedTransactions });
+
+    const errorType = (res: request.Response) => res.body.errors?.[0]?.type;
+
+    // A read straight after a write can rarely see stale rows on develop
+    // (upstream #1616: the unit of work does not await commit), so poll briefly.
+    const eventually = async <T>(
+      read: () => Promise<T>,
+      done: (value: T) => boolean,
+    ): Promise<T> => {
+      let value = await read();
+      for (let i = 0; i < 10 && !done(value); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        value = await read();
+      }
+      return value;
+    };
+
+    const summaryOf = async (accountId: number, statementDate: string) =>
+      camelDeep((await getSummary(accountId, statementDate).expect(200)).body);
+
+    const transactionsOf = async (accountId: number, statementDate: string) =>
+      camelDeep(
+        (await getTransactions(accountId, statementDate).expect(200)).body,
+      );
+
+    const historyOf = async (accountId: number) =>
+      camelDeep(
+        (
+          await authed(
+            api().get('/banking/reconciliations').query({ accountId }),
+          ).expect(200)
+        ).body,
+      ) as any[];
+
+    const detailOf = async (reconciliationId: number) =>
+      camelDeep(
+        (
+          await authed(
+            api().get(`/banking/reconciliations/${reconciliationId}`),
+          ).expect(200)
+        ).body,
+      );
+
+    describe('finish, history and draft', () => {
+      const statementDate = '2036-01-31';
+
+      let accountId: number;
+      let refs: Array<{ referenceType: string; referenceId: number }>;
+
+      beforeAll(async () => {
+        accountId = await createAccount('bank', 'Rec write bank');
+        const expenseAccountId = await createAccount(
+          'expense',
+          'Rec write expense',
+        );
+        await createOwnerContribution(accountId, 1000, '2036-01-10');
+        await createExpenseFrom(accountId, expenseAccountId, 250, '2036-01-20');
+        refs = [
+          await refByAmount(accountId, statementDate, 1000),
+          await refByAmount(accountId, statementDate, -250),
+        ];
+      });
+
+      it('refuses a finish whose difference is not zero', async () => {
+        const res = await finish(
+          accountId,
+          input(statementDate, 750.01, refs),
+        ).expect(400);
+
+        expect(errorType(res)).toBe('BANK_RECONCILIATION_DIFFERENCE_NOT_ZERO');
+      });
+
+      it('rejects an ending balance with more than 2 decimals', async () => {
+        await finish(accountId, input(statementDate, 750.123, refs)).expect(
+          400,
+        );
+        await finish(accountId, input(statementDate, '750.123', refs)).expect(
+          400,
+        );
+        await saveDraft(accountId, input(statementDate, 750.123, refs)).expect(
+          400,
+        );
+      });
+
+      it('keeps a draft with its ticks only in the draft, then discards it', async () => {
+        const tick = [refs[0]];
+        await saveDraft(accountId, input(statementDate, 1000, tick)).expect(
+          200,
+        );
+        // Saving again updates the same single draft.
+        const second = await saveDraft(
+          accountId,
+          input(statementDate, 1000, tick),
+        ).expect(200);
+
+        const summary = await eventually(
+          () => summaryOf(accountId, statementDate),
+          (body) => !!body.draft,
+        );
+        expect(summary.draft.id).toBe(second.body.id);
+        expect(summary.draft.endingBalance).toBe(1000);
+        // A draft is not a reconciliation.
+        expect(summary.lastReconciliation).toBeNull();
+        expect(summary.beginningBalance).toBe(0);
+
+        const rows = await transactionsOf(accountId, statementDate);
+        expect(rows.selected).toEqual(tick);
+        expect(rows.droppedFromDraftCount).toBe(0);
+
+        await discardDraft(accountId).expect(200);
+        const after = await eventually(
+          () => summaryOf(accountId, statementDate),
+          (body) => body.draft === null,
+        );
+        expect(after.draft).toBeNull();
+
+        // Discarding again is a no-op.
+        await discardDraft(accountId).expect(200);
+      });
+
+      it('drops a ticked transaction that was deleted from the draft', async () => {
+        const doomedId = await createOwnerContribution(
+          accountId,
+          55,
+          '2036-01-25',
+        );
+        const doomed = await refByAmount(accountId, statementDate, 55);
+        await saveDraft(
+          accountId,
+          input(statementDate, 55, [doomed, refs[0]]),
+        ).expect(200);
+
+        await authed(api().delete(`/banking/transactions/${doomedId}`)).expect(
+          200,
+        );
+
+        const rows = await eventually(
+          () => transactionsOf(accountId, statementDate),
+          (body) => body.droppedFromDraftCount === 1,
+        );
+        expect(rows.droppedFromDraftCount).toBe(1);
+        expect(rows.selected).toEqual([refs[0]]);
+
+        await discardDraft(accountId).expect(200);
+      });
+
+      it('finishes with the right ending balance and records who did it', async () => {
+        const created = await finish(
+          accountId,
+          input(statementDate, 750, refs),
+        ).expect(201);
+        expect(created.body.id).toBeGreaterThan(0);
+
+        const summary = await eventually(
+          () => summaryOf(accountId, '2036-02-28'),
+          (body) => body.beginningBalance === 750,
+        );
+        expect(summary.beginningBalance).toBe(750);
+        expect(summary.lastReconciliation.endingBalance).toBe(750);
+        expect(summary.lastReconciliation.statementDate).toBe(statementDate);
+        expect(summary.mismatch).toBeNull();
+        // The draft was converted away.
+        expect(summary.draft).toBeNull();
+
+        const history = await eventually(
+          () => historyOf(accountId),
+          (list) => list.length === 1,
+        );
+        expect(history).toHaveLength(1);
+        expect(history[0].id).toBe(created.body.id);
+        expect(history[0].completedByName).toEqual(expect.any(String));
+        expect(history[0].completedByName.length).toBeGreaterThan(0);
+        expect(history[0].completedByUserId).toEqual(expect.any(Number));
+
+        const detail = await detailOf(created.body.id);
+        const amounts = detail.transactions.map((t: any) => t.amount).sort();
+        expect(amounts).toEqual([-250, 1000]);
+      });
+
+      it('refuses the same finish again, and an already reconciled tick', async () => {
+        const again = await finish(
+          accountId,
+          input(statementDate, 750, refs),
+        ).expect(400);
+        expect(errorType(again)).toBe(
+          'BANK_RECONCILIATION_STATEMENT_DATE_NOT_AFTER_LAST',
+        );
+
+        const later = await finish(
+          accountId,
+          input('2036-02-28', 750, refs),
+        ).expect(400);
+        expect(errorType(later)).toBe(
+          'BANK_RECONCILIATION_TRANSACTION_ALREADY_RECONCILED',
+        );
+      });
+
+      it('refuses a tick that is not on the account', async () => {
+        const res = await finish(
+          accountId,
+          input('2036-03-31', 750, [
+            { referenceType: 'Expense', referenceId: 99999999 },
+          ]),
+        ).expect(400);
+        expect(errorType(res)).toBe(
+          'BANK_RECONCILIATION_TRANSACTION_NOT_ON_ACCOUNT',
+        );
+      });
+    });
+
+    describe('duplicated ticks', () => {
+      it('does not change the difference when a transaction is ticked twice', async () => {
+        const accountId = await createAccount('bank', 'Rec dup bank');
+        await createOwnerContribution(accountId, 100, '2036-04-05');
+        const ref = await refByAmount(accountId, '2036-04-30', 100);
+
+        const res = await finish(
+          accountId,
+          input('2036-04-30', 100, [ref, { ...ref }]),
+        ).expect(201);
+
+        const detail = await detailOf(res.body.id);
+        expect(detail.transactions).toHaveLength(1);
+      });
+    });
+
+    describe('mismatch after a reconciled transaction is deleted', () => {
+      it('lists the deleted transaction in the summary mismatch', async () => {
+        const accountId = await createAccount('bank', 'Rec mismatch bank');
+        const contributionId = await createOwnerContribution(
+          accountId,
+          40,
+          '2036-05-05',
+        );
+        const ref = await refByAmount(accountId, '2036-05-31', 40);
+        await finish(accountId, input('2036-05-31', 40, [ref])).expect(201);
+
+        await authed(
+          api().delete(`/banking/transactions/${contributionId}`),
+        ).expect(200);
+
+        const summary = await eventually(
+          () => summaryOf(accountId, '2036-06-30'),
+          (body) => !!body.mismatch,
+        );
+        expect(summary.mismatch.items).toHaveLength(1);
+        expect(summary.mismatch.items[0].isDeleted).toBe(true);
+        expect(summary.mismatch.items[0].amount).toBe(40);
+        // The books lost the 40 the statement closed at.
+        expect(summary.beginningBalance).toBe(0);
+        expect(summary.mismatch.amount).toBe(-40);
+      });
+    });
+
+    describe('credit card account', () => {
+      it('counts a charge as +80 and rejects the negated ending balance', async () => {
+        const cardId = await createAccount('credit-card', 'Rec write card');
+        const expenseAccountId = await createAccount('expense', 'Rec card exp');
+        await createExpenseFrom(cardId, expenseAccountId, 80, '2036-07-10');
+        const ref = await refByAmount(cardId, '2036-07-31', 80);
+
+        const wrong = await finish(
+          cardId,
+          input('2036-07-31', -80, [ref]),
+        ).expect(400);
+        expect(errorType(wrong)).toBe(
+          'BANK_RECONCILIATION_DIFFERENCE_NOT_ZERO',
+        );
+
+        await finish(cardId, input('2036-07-31', 80, [ref])).expect(201);
+      });
+    });
+  });
 });

@@ -1,8 +1,12 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
+  Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -19,6 +23,10 @@ import {
   GetBankReconciliationSummaryQueryDto,
   GetBankReconciliationTransactionsQueryDto,
 } from './dtos/BankReconciliationQueries.dto';
+import {
+  BankReconciliationIdResponseDto,
+  BankReconciliationInputDto,
+} from './dtos/BankReconciliationInput.dto';
 import {
   BankReconciliationDetailResponseDto,
   BankReconciliationListItemDto,
@@ -103,5 +111,50 @@ export class BankReconciliationController {
   })
   public getDetail(@Param('id', ParseIntPipe) id: number) {
     return this.bankReconciliationApplication.getDetail(id);
+  }
+
+  @Put('accounts/:accountId/draft')
+  @RequirePermission(CashflowAction.Reconcile, AbilitySubject.Cashflow)
+  @ApiOperation({
+    summary: 'Saves the reconciliation in progress as the account draft.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The saved draft id.',
+    type: BankReconciliationIdResponseDto,
+  })
+  public saveDraft(
+    @Param('accountId', ParseIntPipe) accountId: number,
+    @Body() dto: BankReconciliationInputDto,
+  ) {
+    return this.bankReconciliationApplication.saveDraft(accountId, dto);
+  }
+
+  @Delete('accounts/:accountId/draft')
+  @RequirePermission(CashflowAction.Reconcile, AbilitySubject.Cashflow)
+  @ApiOperation({ summary: 'Discards the account draft, if there is one.' })
+  @ApiResponse({ status: 200, description: 'The draft is discarded.' })
+  public async discardDraft(
+    @Param('accountId', ParseIntPipe) accountId: number,
+  ) {
+    await this.bankReconciliationApplication.discardDraft(accountId);
+  }
+
+  @Post('accounts/:accountId/finish')
+  @RequirePermission(CashflowAction.Reconcile, AbilitySubject.Cashflow)
+  @ApiOperation({
+    summary:
+      'Finishes the reconciliation. Allowed only when the difference is exactly zero.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'The completed reconciliation id.',
+    type: BankReconciliationIdResponseDto,
+  })
+  public finish(
+    @Param('accountId', ParseIntPipe) accountId: number,
+    @Body() dto: BankReconciliationInputDto,
+  ) {
+    return this.bankReconciliationApplication.finish(accountId, dto);
   }
 }

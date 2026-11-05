@@ -10,6 +10,7 @@ export class BankReconciliation extends BaseModel {
   public selectedTransactions!: ReconcileRef[] | null;
   public beginningBalance!: number | null;
   public clearedIncreases!: number | null;
+  /** Stored as a positive magnitude (the sum of the negative ticked amounts, sign dropped). */
   public clearedDecreases!: number | null;
   public bookBalance!: number | null;
   public unclearedTotal!: number | null;

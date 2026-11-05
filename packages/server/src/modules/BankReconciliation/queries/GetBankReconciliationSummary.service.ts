@@ -4,7 +4,7 @@ import {
   BankReconciliationRepository,
   toDateString,
 } from '../BankReconciliationRepository';
-import { findChangedReconciled, refKey, roundAmount } from '../_utils';
+import { findChangedReconciled, roundAmount } from '../_utils';
 import { ReconciledSnapshot } from '../types';
 import {
   BankReconciliationHeaderDto,
@@ -46,11 +46,9 @@ export class GetBankReconciliationSummary {
     const currentAmounts = new Map<string, number>(
       [...ledger.entries()].map(([key, row]) => [key, row.amount]),
     );
-    const beginningBalance = roundAmount(
-      reconciledRows.reduce(
-        (sum, row) => sum + (currentAmounts.get(refKey(row)) ?? 0),
-        0,
-      ),
+    const beginningBalance = this.repository.computeBeginningBalance(
+      reconciledRows,
+      ledger,
     );
 
     let mismatch: BankReconciliationSummaryResponseDto['mismatch'] = null;

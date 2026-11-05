@@ -13,6 +13,9 @@ import { GetBankReconciliationSummary } from './queries/GetBankReconciliationSum
 import { GetBankReconciliationTransactions } from './queries/GetBankReconciliationTransactions.service';
 import { GetBankReconciliations } from './queries/GetBankReconciliations.service';
 import { GetBankReconciliation } from './queries/GetBankReconciliation.service';
+import { SaveBankReconciliationDraft } from './commands/SaveBankReconciliationDraft.service';
+import { DiscardBankReconciliationDraft } from './commands/DiscardBankReconciliationDraft.service';
+import { FinishBankReconciliation } from './commands/FinishBankReconciliation.service';
 
 const models = [
   RegisterTenancyModel(BankReconciliation),
@@ -32,6 +35,9 @@ const models = [
     GetBankReconciliationTransactions,
     GetBankReconciliations,
     GetBankReconciliation,
+    SaveBankReconciliationDraft,
+    DiscardBankReconciliationDraft,
+    FinishBankReconciliation,
   ],
   exports: [...models],
 })
