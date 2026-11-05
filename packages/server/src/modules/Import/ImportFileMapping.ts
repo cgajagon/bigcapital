@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { fromPairs, isUndefined } from 'lodash';
+import { fromPairs, isPlainObject, isUndefined } from 'lodash';
+import * as Yup from 'yup';
 import {
   ImportDateFormats,
   ImportFileMapPOJO,
@@ -10,14 +11,12 @@ import { ServiceError } from '../Items/ServiceError';
 import { ERRORS } from './_utils';
 import { ImportModel } from './models/Import';
 import { ImportableRegistry } from './ImportableRegistry';
-import { ImportFileCommon } from './ImportFileCommon';
 
 @Injectable()
 export class ImportFileMapping {
   constructor(
     private readonly resource: ResourceService,
     private readonly importableRegistry: ImportableRegistry,
-    private readonly importFileCommon: ImportFileCommon,
 
     @Inject(ImportModel.name)
     private readonly importModel: typeof ImportModel,
@@ -59,14 +58,15 @@ export class ImportFileMapping {
 
     const patch: Record<string, string> = { mapping: JSON.stringify(maps) };
 
-    if (params) {
-      const mergedParams = { ...importFile.paramsParsed, ...params };
-
-      await this.importFileCommon.validateParamsSchema(
-        importFile.resource,
-        mergedParams,
+    if (!isUndefined(params) && params !== null) {
+      const allowedParams = await this.validateMappingParams(
+        importable.mappingParamsSchema(),
+        params,
       );
-      patch.params = JSON.stringify(mergedParams);
+      patch.params = JSON.stringify({
+        ...importFile.paramsParsed,
+        ...allowedParams,
+      });
     }
     await this.importModel.query().findById(importFile.id).patch(patch);
     return {
@@ -75,6 +75,31 @@ export class ImportFileMapping {
         resource: importFile.resource,
       },
     };
+  }
+
+  /**
+   * Validates the params sent with the mapping against the importable's
+   * mapping params schema: a plain object with only the allowed keys and
+   * exact types (no casting), so stored params can't be overwritten.
+   * @param {Yup.ObjectSchema<object> | null} schema
+   * @param {unknown} params
+   * @throws {ServiceError(ERRORS.INVALID_IMPORT_PARAMS)}
+   */
+  private async validateMappingParams(
+    schema: Yup.ObjectSchema<object> | null,
+    params: unknown,
+  ): Promise<Record<string, unknown>> {
+    if (!schema || !isPlainObject(params)) {
+      throw new ServiceError(ERRORS.INVALID_IMPORT_PARAMS);
+    }
+    try {
+      return (await schema.validate(params, { strict: true })) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      throw new ServiceError(ERRORS.INVALID_IMPORT_PARAMS);
+    }
   }
 
   /**

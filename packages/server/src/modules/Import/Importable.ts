@@ -36,6 +36,15 @@ export abstract class Importable {
   }
 
   /**
+   * The params the mapping step may set, merged into the import's params.
+   * Only the keys and types it describes are accepted. None by default.
+   * @returns {Yup.ObjectSchema<object> | null}
+   */
+  public mappingParamsSchema(): Yup.ObjectSchema<object> | null {
+    return null;
+  }
+
+  /**
    * Validates the column mapping at the mapping step; throws a ServiceError
    * to refuse it. Accepts every mapping by default.
    * @param {ImportMappingAttr[]} _maps

@@ -1,3 +1,4 @@
+import * as yup from 'yup';
 import { ImportFileMapping } from './ImportFileMapping';
 import { ServiceError } from '../Items/ServiceError';
 
@@ -7,8 +8,16 @@ const bankFields = {
   withdrawal: { name: 'Withdrawal', fieldType: 'number' },
 };
 
+const reverseSignsSchema = () =>
+  yup.object().shape({ reverseSigns: yup.boolean() }).noUnknown();
+
+interface FakeImportable {
+  validateMapping: jest.Mock;
+  mappingParamsSchema: () => yup.ObjectSchema<object> | null;
+}
+
 const makeService = (
-  importable: { validateMapping: jest.Mock },
+  importable: FakeImportable,
   storedParams = { accountId: 1, batch: 'b' },
 ) => {
   const importFile = {
@@ -31,16 +40,19 @@ const makeService = (
     getResourceImportableFields: jest.fn(() => bankFields),
   };
   const registry = { getImportable: jest.fn(async () => importable) };
-  const importFileCommon = { validateParamsSchema: jest.fn(async () => {}) };
 
   const service = new ImportFileMapping(
     resource as any,
     registry as any,
-    importFileCommon as any,
     importModel as any,
   );
-  return { service, patch, importFileCommon };
+  return { service, patch };
 };
+
+const bankImportable = (): FakeImportable => ({
+  validateMapping: jest.fn(),
+  mappingParamsSchema: reverseSignsSchema,
+});
 
 const maps = [
   { from: 'Date', to: 'date' },
@@ -50,6 +62,7 @@ const maps = [
 describe('ImportFileMapping.mapping', () => {
   it('refuses a mapping the importable rejects, without saving', async () => {
     const importable = {
+      ...bankImportable(),
       validateMapping: jest.fn(() => {
         throw new ServiceError('IMPORT_AMOUNT_MAPPING_CONFLICT');
       }),
@@ -63,30 +76,48 @@ describe('ImportFileMapping.mapping', () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
-  it('merges params into the stored params and validates them', async () => {
-    const importable = { validateMapping: jest.fn() };
-    const { service, patch, importFileCommon } = makeService(importable);
+  it('merges allowed params into the stored params', async () => {
+    const { service, patch } = makeService(bankImportable());
 
     await service.mapping('f1', maps, { reverseSigns: true });
 
-    const merged = { accountId: 1, batch: 'b', reverseSigns: true };
-    expect(importFileCommon.validateParamsSchema).toHaveBeenCalledWith(
-      'UncategorizedBankTransaction',
-      merged,
-    );
     expect(patch).toHaveBeenCalledWith({
       mapping: JSON.stringify(maps),
-      params: JSON.stringify(merged),
+      params: JSON.stringify({ accountId: 1, batch: 'b', reverseSigns: true }),
     });
   });
 
+  it.each([
+    ['a key the importable does not allow', { accountId: 99 }],
+    ['a reverseSigns that is a string', { reverseSigns: 'false' }],
+    ['params that are not an object', 'reverseSigns'],
+    ['params that are an array', [true]],
+  ])('refuses %s, without saving', async (_label, params) => {
+    const { service, patch } = makeService(bankImportable());
+
+    await expect(
+      service.mapping('f1', maps, params as any),
+    ).rejects.toMatchObject({ errorType: 'INVALID_IMPORT_PARAMS' });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it('refuses params when the importable takes none at mapping', async () => {
+    const { service, patch } = makeService({
+      validateMapping: jest.fn(),
+      mappingParamsSchema: () => null,
+    });
+
+    await expect(
+      service.mapping('f1', maps, { reverseSigns: true }),
+    ).rejects.toMatchObject({ errorType: 'INVALID_IMPORT_PARAMS' });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it('leaves params untouched when none are sent', async () => {
-    const importable = { validateMapping: jest.fn() };
-    const { service, patch, importFileCommon } = makeService(importable);
+    const { service, patch } = makeService(bankImportable());
 
     await service.mapping('f1', maps);
 
-    expect(importFileCommon.validateParamsSchema).not.toHaveBeenCalled();
     expect(patch).toHaveBeenCalledWith({ mapping: JSON.stringify(maps) });
   });
 });

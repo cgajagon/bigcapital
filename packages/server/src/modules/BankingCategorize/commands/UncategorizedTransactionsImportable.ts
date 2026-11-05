@@ -123,7 +123,7 @@ export class UncategorizedTransactionsImportable extends Importable {
   ): Promise<ImportPreparedRows> {
     return prepareBankRows(parsedData, {
       layout: getBankAmountLayout(importFile.mappingParsed || []),
-      reverseSigns: !!importFile.paramsParsed?.reverseSigns,
+      reverseSigns: importFile.paramsParsed?.reverseSigns === true,
     });
   }
 
@@ -172,8 +172,15 @@ export class UncategorizedTransactionsImportable extends Importable {
   public paramsValidationSchema() {
     return yup.object().shape({
       accountId: yup.number().required(),
-      reverseSigns: yup.boolean(),
     });
+  }
+
+  /**
+   * The params the mapping step may set: only `reverseSigns`, a boolean.
+   * @returns {yup.ObjectSchema<object>}
+   */
+  public mappingParamsSchema() {
+    return yup.object().shape({ reverseSigns: yup.boolean() }).noUnknown();
   }
 
   /**

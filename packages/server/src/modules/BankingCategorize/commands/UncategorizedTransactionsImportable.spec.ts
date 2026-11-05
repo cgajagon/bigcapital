@@ -151,22 +151,34 @@ describe('UncategorizedTransactionsImportable.getPreviewSummary', () => {
   });
 });
 
-describe('UncategorizedTransactionsImportable.paramsValidationSchema', () => {
+describe('UncategorizedTransactionsImportable.mappingParamsSchema', () => {
   const { importable } = makeImportable([]);
+  const validate = (params: unknown) =>
+    importable.mappingParamsSchema().validate(params, { strict: true });
 
   it('accepts a boolean reverseSigns', async () => {
-    await expect(
-      importable
-        .paramsValidationSchema()
-        .validate({ accountId: 1, reverseSigns: true }, { strict: true }),
-    ).resolves.toBeTruthy();
+    await expect(validate({ reverseSigns: true })).resolves.toEqual({
+      reverseSigns: true,
+    });
   });
 
   it('rejects a reverseSigns that is not a boolean', async () => {
-    await expect(
-      importable
-        .paramsValidationSchema()
-        .validate({ accountId: 1, reverseSigns: 'yes' }, { strict: true }),
-    ).rejects.toBeTruthy();
+    await expect(validate({ reverseSigns: 'false' })).rejects.toBeTruthy();
+  });
+
+  it('rejects keys other than reverseSigns', async () => {
+    await expect(validate({ accountId: 99 })).rejects.toBeTruthy();
+  });
+});
+
+describe('UncategorizedTransactionsImportable.prepareRows reverse signs', () => {
+  it('only reverses when reverseSigns is exactly true', async () => {
+    const { importable } = makeImportable([]);
+    const { rows } = await importable.prepareRows([{ amount: 5 }], {
+      mappingParsed: [{ from: 'A', to: 'amount' }],
+      paramsParsed: { accountId: 1, reverseSigns: 'true' },
+    } as unknown as ImportModelShape);
+
+    expect(rows[0].amount).toBe(5);
   });
 });
