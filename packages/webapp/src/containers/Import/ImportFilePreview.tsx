@@ -13,6 +13,12 @@ import { SectionCard, Section } from '@/components/Section';
 import { CLASSES } from '@/constants';
 import { useImportFileProcess } from '@/hooks/query/import';
 
+const formatSummaryAmount = (amount: number) =>
+  amount.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 interface ImportResultCounts {
   createdCount?: number;
   totalCount?: number;
@@ -43,6 +49,12 @@ function ImportFilePreviewContent() {
           >
             {importPreview.createdCount} of {importPreview.totalCount} Items in
             your file are ready to be imported.
+            {importPreview.summary && (
+              <Text>
+                Money in: {formatSummaryAmount(importPreview.summary.moneyIn)} ·
+                Money out: {formatSummaryAmount(importPreview.summary.moneyOut)}
+              </Text>
+            )}
           </Callout>
 
           <ImportFilePreviewImported />

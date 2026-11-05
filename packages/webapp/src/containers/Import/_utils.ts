@@ -24,11 +24,18 @@ export const getFieldKey = (key: string, group = ''): string => {
 };
 
 /**
- * Transforms the mapping form values to request body.
+ * The bank transactions import, which has the Reverse signs option.
+ */
+export const BANK_TRANSACTIONS_RESOURCE = 'uncategorized_bank_transaction';
+
+/**
+ * Transforms the mapping form values to request body. `reverseSigns` is an
+ * import option, not a column mapping, so it travels as a param.
  */
 export const transformValueToReq = (
-  value: ImportFileMappingFormValues,
+  values: ImportFileMappingFormValues,
 ): ImportMappingBody => {
+  const { reverseSigns, ...value } = values;
   const mapping = chain(value)
     .thru(deepdash.index)
     .pickBy((_value, key) => !isEmpty(get(value, key)))
@@ -39,7 +46,9 @@ export const transformValueToReq = (
     }))
     .value();
 
-  return { mapping };
+  return typeof reverseSigns === 'boolean'
+    ? { mapping, params: { reverseSigns } }
+    : { mapping };
 };
 
 /**
@@ -84,7 +93,7 @@ const getInitialDefaultValues = (
 export const useImportFileMappingInitialValues =
   (): ImportFileMappingFormValues => {
     const { importFile } = useImportFileMapBootContext();
-    const { entityColumns, sheetColumns } = useImportFileContext();
+    const { entityColumns, sheetColumns, resource } = useImportFileContext();
 
     const initialResValues = useMemo(
       () => transformResToFormValues(importFile?.map || []),
@@ -100,7 +109,10 @@ export const useImportFileMappingInitialValues =
         assign(
           initialDefaultValues,
           transformToForm(initialResValues, initialDefaultValues),
+          resource === BANK_TRANSACTIONS_RESOURCE
+            ? { reverseSigns: false }
+            : {},
         ),
-      [initialDefaultValues, initialResValues],
+      [initialDefaultValues, initialResValues, resource],
     );
   };

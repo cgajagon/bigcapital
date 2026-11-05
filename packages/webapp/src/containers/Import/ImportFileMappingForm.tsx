@@ -43,6 +43,14 @@ export function ImportFileMappingForm({
             intent: Intent.DANGER,
           });
         }
+        if (
+          data.errors.find((e) => e.type === 'IMPORT_AMOUNT_MAPPING_CONFLICT')
+        ) {
+          AppToaster.show({
+            message: 'Map either Amount, or Deposit and Withdrawal, not both.',
+            intent: Intent.DANGER,
+          });
+        }
         setSubmitting(false);
       });
   };

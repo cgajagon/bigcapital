@@ -1,20 +1,20 @@
-import { Button, Intent, Position } from '@blueprintjs/core';
+import { Button, Classes, Intent, Position } from '@blueprintjs/core';
 import clsx from 'classnames';
 import { useFormikContext } from 'formik';
 import { useCallback, useMemo } from 'react';
 import { ImportStepperStep } from './_types';
-import { getFieldKey } from './_utils';
+import { BANK_TRANSACTIONS_RESOURCE, getFieldKey } from './_utils';
 import { ImportFileContainer } from './ImportFileContainer';
 import styles from './ImportFileMapping.module.scss';
 import { ImportFileMapBootProvider } from './ImportFileMappingBoot';
 import { ImportFileMappingForm } from './ImportFileMappingForm';
 import { EntityColumnField, useImportFileContext } from './ImportFileProvider';
 import type { ImportFileMappingFormValues } from './_types';
-import { Box, FSelect, Group, Hint } from '@/components';
+import { Box, FCheckbox, FSelect, Group, Hint } from '@/components';
 import { CLASSES } from '@/constants';
 
 export function ImportFileMapping() {
-  const { importId, entityColumns } = useImportFileContext();
+  const { importId, entityColumns, resource } = useImportFileContext();
 
   return (
     <ImportFileMapBootProvider importId={importId}>
@@ -33,6 +33,15 @@ export function ImportFileMapping() {
               fields={entityColumn.fields}
             />
           ))}
+          {resource === BANK_TRANSACTIONS_RESOURCE && (
+            <Box className={styles.group}>
+              <FCheckbox name={'reverseSigns'} label={'Reverse signs'} />
+              <p className={Classes.TEXT_MUTED}>
+                Money out shows as positive in this file (common on credit-card
+                statements).
+              </p>
+            </Box>
+          )}
         </ImportFileContainer>
         <ImportFileMappingFloatingActions />
       </ImportFileMappingForm>

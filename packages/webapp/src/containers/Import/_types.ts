@@ -20,7 +20,10 @@ export interface ImportFileMappingFormProps {
   children: ReactNode;
 }
 
-export type ImportFileMappingFormValues = Record<string, string | null>;
+export type ImportFileMappingFormValues = Record<
+  string,
+  string | boolean | null
+>;
 
 export interface ImportFileUploadValues {
   file: File | null;
@@ -53,6 +56,8 @@ export interface ImportPreview extends ImportPreviewResponse {
   errors: ImportPreviewError[];
   unmappedColumns?: string[];
   unmappedColumnsCount: number;
+  /** Money in / money out totals of the rows to be created (bank imports). */
+  summary?: { moneyIn: number; moneyOut: number };
 }
 
 export interface ImportFileMetaMap {

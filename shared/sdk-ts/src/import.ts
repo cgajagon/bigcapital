@@ -13,6 +13,8 @@ export const IMPORT_ROUTES = {
 
 export interface ImportMappingBody {
   mapping: Array<{ group?: string; from: string; to: string }>;
+  /** Import options chosen at the mapping step, merged into the import's params. */
+  params?: Record<string, unknown>;
 }
 
 export interface ImportPreviewResponse {
