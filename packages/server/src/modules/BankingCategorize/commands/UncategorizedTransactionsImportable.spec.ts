@@ -83,3 +83,90 @@ describe('UncategorizedTransactionsImportable.getSkippedRows', () => {
     expect(queryFactory).not.toHaveBeenCalled();
   });
 });
+
+describe('UncategorizedTransactionsImportable.validateMapping', () => {
+  const { importable } = makeImportable([]);
+
+  it('refuses Amount mapped together with Deposit or Withdrawal', () => {
+    expect(() =>
+      importable.validateMapping([
+        { from: 'A', to: 'amount' },
+        { from: 'W', to: 'withdrawal' },
+      ]),
+    ).toThrow(
+      expect.objectContaining({ errorType: 'IMPORT_AMOUNT_MAPPING_CONFLICT' }),
+    );
+  });
+
+  it('accepts Amount alone, or Deposit and Withdrawal alone', () => {
+    expect(() =>
+      importable.validateMapping([{ from: 'A', to: 'amount' }]),
+    ).not.toThrow();
+    expect(() =>
+      importable.validateMapping([
+        { from: 'D', to: 'deposit' },
+        { from: 'W', to: 'withdrawal' },
+      ]),
+    ).not.toThrow();
+  });
+});
+
+describe('UncategorizedTransactionsImportable.prepareRows', () => {
+  const { importable } = makeImportable([]);
+
+  it('turns deposit/withdrawal columns into a signed amount', async () => {
+    const { rows, rowErrors } = await importable.prepareRows(
+      [{ date: '2026-02-02', withdrawal: 5 }],
+      {
+        mappingParsed: [{ from: 'W', to: 'withdrawal' }],
+        paramsParsed: { accountId: 1 },
+      } as unknown as ImportModelShape,
+    );
+    expect(rows).toEqual([{ date: '2026-02-02', amount: -5 }]);
+    expect(rowErrors).toEqual([]);
+  });
+
+  it('reverses one-column amounts when reverseSigns is set', async () => {
+    const { rows } = await importable.prepareRows(
+      [{ amount: 5 }, { amount: -100 }],
+      {
+        mappingParsed: [{ from: 'A', to: 'amount' }],
+        paramsParsed: { accountId: 1, reverseSigns: true },
+      } as unknown as ImportModelShape,
+    );
+    expect(rows.map((row) => row.amount)).toEqual([-5, 100]);
+  });
+});
+
+describe('UncategorizedTransactionsImportable.getPreviewSummary', () => {
+  it('totals money in and out of the rows to be created', () => {
+    const { importable } = makeImportable([]);
+
+    expect(
+      importable.getPreviewSummary([
+        { index: 0, data: { amount: 100 } },
+        { index: 1, data: { amount: -5 } },
+      ]),
+    ).toEqual({ moneyIn: 100, moneyOut: 5 });
+  });
+});
+
+describe('UncategorizedTransactionsImportable.paramsValidationSchema', () => {
+  const { importable } = makeImportable([]);
+
+  it('accepts a boolean reverseSigns', async () => {
+    await expect(
+      importable
+        .paramsValidationSchema()
+        .validate({ accountId: 1, reverseSigns: true }, { strict: true }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('rejects a reverseSigns that is not a boolean', async () => {
+    await expect(
+      importable
+        .paramsValidationSchema()
+        .validate({ accountId: 1, reverseSigns: 'yes' }, { strict: true }),
+    ).rejects.toBeTruthy();
+  });
+});

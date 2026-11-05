@@ -11,8 +11,19 @@ import { CreateUncategorizedTransactionDTO } from '../types/BankingCategorize.ty
 import { TenantModelProxy } from '@/modules/System/models/TenantBaseModel';
 import { ImportableService } from '../../Import/decorators/Import.decorator';
 import { UncategorizedBankTransaction } from '../../BankingTransactions/models/UncategorizedBankTransaction';
-import { ImportRowSkip } from '../../Import/interfaces';
+import {
+  ImportMappingAttr,
+  ImportOperSuccess,
+  ImportPreparedRows,
+  ImportRowSkip,
+} from '../../Import/interfaces';
 import { ImportModelShape } from '../../Import/models/Import';
+import { ServiceError } from '../../Items/ServiceError';
+import {
+  getBankAmountLayout,
+  prepareBankRows,
+  summarizeBankAmounts,
+} from '../utils/bankImportAmounts';
 import {
   BANK_IMPORT_DUPLICATE_ERROR_CODE,
   findDuplicateRowIndexes,
@@ -84,6 +95,49 @@ export class UncategorizedTransactionsImportable extends Importable {
   }
 
   /**
+   * Refuses Amount mapped together with Deposit or Withdrawal: a file gives
+   * either one signed Amount column or separate Deposit/Withdrawal columns.
+   * @param {ImportMappingAttr[]} maps
+   */
+  public validateMapping(maps: ImportMappingAttr[]): void {
+    const mapsTo = (key: string) => maps.some((map) => map.to === key);
+
+    if (mapsTo('amount') && (mapsTo('deposit') || mapsTo('withdrawal'))) {
+      throw new ServiceError(
+        'IMPORT_AMOUNT_MAPPING_CONFLICT',
+        'Map either Amount, or Deposit and Withdrawal, not both.',
+      );
+    }
+  }
+
+  /**
+   * Turns each row into one signed amount (Deposit/Withdrawal columns and
+   * reverse signs), before the duplicate check, transform and validation.
+   * @param {Record<string, any>[]} parsedData - Parsed rows, in file order.
+   * @param {ImportModelShape} importFile
+   * @returns {Promise<ImportPreparedRows>}
+   */
+  public async prepareRows(
+    parsedData: Record<string, any>[],
+    importFile: ImportModelShape,
+  ): Promise<ImportPreparedRows> {
+    return prepareBankRows(parsedData, {
+      layout: getBankAmountLayout(importFile.mappingParsed || []),
+      reverseSigns: !!importFile.paramsParsed?.reverseSigns,
+    });
+  }
+
+  /**
+   * Retrieves the money in / money out totals of the rows to be created.
+   * @param {ImportOperSuccess[]} success
+   */
+  public getPreviewSummary(success: ImportOperSuccess[]) {
+    return summarizeBankAmounts(
+      success.map((oper) => Number((oper.data as { amount?: number })?.amount)),
+    );
+  }
+
+  /**
    * Transformes the DTO before validating and importing.
    * @param {CreateUncategorizedTransactionDTO} createDTO
    * @param {ImportableContext} context
@@ -118,6 +172,7 @@ export class UncategorizedTransactionsImportable extends Importable {
   public paramsValidationSchema() {
     return yup.object().shape({
       accountId: yup.number().required(),
+      reverseSigns: yup.boolean(),
     });
   }
 

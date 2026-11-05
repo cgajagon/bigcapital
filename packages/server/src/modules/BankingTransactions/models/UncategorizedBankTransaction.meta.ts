@@ -67,6 +67,20 @@ export const UncategorizedBankTransactionMeta = {
       name: 'Amount',
       fieldType: 'number',
       required: true,
+      // A row's amount can also come from Deposit/Withdrawal.
+      importRequiredLabel: false,
+      importHint:
+        'Signed amount: money in positive, money out negative. Or map Deposit and/or Withdrawal instead.',
+    },
+    deposit: {
+      name: 'Deposit',
+      fieldType: 'number',
+      importHint: 'Money in, as a positive number.',
+    },
+    withdrawal: {
+      name: 'Withdrawal',
+      fieldType: 'number',
+      importHint: 'Money out, as a positive number.',
     },
   },
 };

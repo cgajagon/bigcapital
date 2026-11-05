@@ -152,6 +152,11 @@ export interface IModelMeta {
 export interface IModelMetaFieldCommon2 {
   name: string;
   required?: boolean;
+  /**
+   * False hides the "required" mark in the import mapping screen while each
+   * row is still validated as required (the value may come from other columns).
+   */
+  importRequiredLabel?: boolean;
   importHint?: string;
   order?: number;
   unique?: number;

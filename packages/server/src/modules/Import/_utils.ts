@@ -272,10 +272,10 @@ export const getResourceColumns = (resourceColumns: {
 }) => {
   const mapColumn =
     (group: string) =>
-    ([fieldKey, { name, importHint, required, order, ...field }]: [
-      string,
-      IModelMetaField2,
-    ]) => {
+    ([
+      fieldKey,
+      { name, importHint, required, importRequiredLabel, order, ...field },
+    ]: [string, IModelMetaField2]) => {
       const extra: Record<string, any> = {};
       const key = fieldKey;
 
@@ -288,7 +288,7 @@ export const getResourceColumns = (resourceColumns: {
       return {
         key,
         name,
-        required,
+        required: importRequiredLabel === false ? false : required,
         hint: importHint,
         order,
         ...extra,

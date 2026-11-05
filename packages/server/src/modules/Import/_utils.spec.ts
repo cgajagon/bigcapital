@@ -1,4 +1,38 @@
-import { aggregate, getImportResultCounts, valueParser } from './_utils';
+import {
+  aggregate,
+  getImportResultCounts,
+  getResourceColumns,
+  valueParser,
+} from './_utils';
+
+describe('getResourceColumns required label', () => {
+  // Columns come back in groups; plain fields are in the first (main) group.
+  const columnsOf = (fields: Record<string, any>) =>
+    (
+      getResourceColumns(fields as any) as Array<{
+        fields: Array<{ key: string; required: boolean }>;
+      }>
+    )[0].fields;
+
+  it('drops the required label when importRequiredLabel is false', () => {
+    const [amount] = columnsOf({
+      amount: {
+        name: 'Amount',
+        fieldType: 'number',
+        required: true,
+        importRequiredLabel: false,
+      },
+    });
+    expect(amount.required).toBe(false);
+  });
+
+  it('keeps the required label otherwise', () => {
+    const [date] = columnsOf({
+      date: { name: 'Date', fieldType: 'date', required: true },
+    });
+    expect(date.required).toBe(true);
+  });
+});
 
 describe('valueParser number fields', () => {
   const parse = valueParser(
