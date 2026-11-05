@@ -6,13 +6,33 @@ import { first } from 'lodash';
  * used, so no time zone can shift the day; any time of day is dropped.
  * @param {number} serial
  * @param {boolean} date1904 - Whether the workbook uses the 1904 date system.
- * @returns {string}
+ * @returns {string | null} Null when the serial isn't a valid Excel date
+ *   (negative or past year 9999), e.g. a date-formatted "days overdue" cell.
  */
-const formatDateSerial = (serial: number, date1904: boolean): string => {
-  const { y, m, d } = XLSX.SSF.parse_date_code(serial, { date1904 });
-  const pad = (n: number) => String(n).padStart(2, '0');
+const formatDateSerial = (serial: number, date1904: boolean): string | null => {
+  const parsed = XLSX.SSF.parse_date_code(serial, { date1904 });
+  if (!parsed) return null;
 
-  return `${y}-${pad(m)}-${pad(d)}`;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${parsed.y}-${pad(parsed.m)}-${pad(parsed.d)}`;
+};
+
+/**
+ * Whether a number format shows a date, not only a time or a duration
+ * (SheetJS's `is_date` is also true for `h:mm` and `[h]:mm`).
+ * @param {string} format
+ * @returns {boolean}
+ */
+const isDateFormat = (format: string): boolean => {
+  if (!XLSX.SSF.is_date(format)) return false;
+
+  // Ignore quoted text, escaped characters and [..] sections (colours,
+  // locales, elapsed-time units) before looking for a day or year part.
+  const datePart = format
+    .replace(/"[^"]*"/g, '')
+    .replace(/\\./g, '')
+    .replace(/\[[^\]]*\]/g, '');
+  return /[dy]/i.test(datePart);
 };
 
 /**
@@ -28,8 +48,10 @@ const convertDateCells = (worksheet: XLSX.WorkSheet, date1904: boolean) => {
     .forEach((address) => {
       const cell: XLSX.CellObject = worksheet[address];
 
-      if (cell.t === 'n' && cell.z && XLSX.SSF.is_date(cell.z)) {
-        const date = formatDateSerial(cell.v as number, date1904);
+      if (cell.t !== 'n' || !cell.z || !isDateFormat(String(cell.z))) return;
+
+      const date = formatDateSerial(cell.v as number, date1904);
+      if (date) {
         worksheet[address] = { t: 's', v: date, w: date };
       }
     });
