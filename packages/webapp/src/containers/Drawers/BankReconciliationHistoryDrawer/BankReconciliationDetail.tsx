@@ -72,7 +72,7 @@ export function BankReconciliationDetail({
   currencyCode,
   onBack,
 }: BankReconciliationDetailProps) {
-  const { data, isLoading, isError } = useBankReconciliation(reconciliationId);
+  const { data, isLoading } = useBankReconciliation(reconciliationId);
   const { openDrawer } = useDrawerActions();
   const { openAlert } = useAlertActions();
   const fmt = (amount?: number | null) =>
@@ -89,7 +89,9 @@ export function BankReconciliationDetail({
   let content: React.ReactNode;
   if (isLoading) {
     content = <Spinner size={30} />;
-  } else if (isError || !data) {
+  } else if (!data) {
+    // Stale `data` with `isError` (e.g. a 404 right after an undo) still renders
+    // the content; the list unmounts this view a moment later.
     content = (
       <Callout intent={Intent.DANGER}>
         {intl.get('bank_reconciliation.history_load_failed')}
