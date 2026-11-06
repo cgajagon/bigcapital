@@ -29,9 +29,11 @@ exports.up = async function (knex) {
     table.integer('completed_by_user_id').unsigned().nullable();
     table.timestamps();
 
+    // Reconciliation data has no meaning without its account.
     table
       .foreign('account_id', 'fk_bank_rec_account')
-      .references('accounts.id');
+      .references('accounts.id')
+      .onDelete('CASCADE');
     table.index(['account_id', 'status'], 'bank_rec_account_status_index');
     table.index(
       ['account_id', 'statement_date'],

@@ -138,12 +138,15 @@ export class FinishBankReconciliation {
       const selectedAmounts = selected.map(
         (ref) => ledger.get(refKey(ref)).amount,
       );
+      // Zero-amount transactions are hidden from the list, so they are not
+      // counted as uncleared either.
       const uncleared = [...ledger.entries()]
         .filter(
           ([key, row]) =>
             !reconciledKeys.has(key) &&
             !selectedKeys.has(key) &&
-            row.date <= dto.statementDate,
+            row.date <= dto.statementDate &&
+            row.amount !== 0,
         )
         .map(([, row]) => row.amount);
 

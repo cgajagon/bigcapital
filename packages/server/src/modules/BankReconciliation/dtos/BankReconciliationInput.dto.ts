@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsString,
   Matches,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 
@@ -16,6 +17,7 @@ const DATE_ONLY_MESSAGE = 'statementDate must be a date in YYYY-MM-DD format';
 export class ReconcileRefDto {
   @ApiProperty({ example: 'Expense', description: 'Source transaction type.' })
   @IsString()
+  @MaxLength(64)
   referenceType: string;
 
   @ApiProperty({ example: 12, description: 'Source transaction id.' })

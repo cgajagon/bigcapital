@@ -821,6 +821,15 @@ describe('Bank reconciliation (e2e)', () => {
         );
       });
 
+      it('rejects a reference type longer than 64 characters', async () => {
+        await saveDraft(
+          accountId,
+          input(statementDate, 0, [
+            { referenceType: 'x'.repeat(65), referenceId: 1 },
+          ]),
+        ).expect(400);
+      });
+
       it('refuses a tick that is not on the account', async () => {
         const res = await finish(
           accountId,
@@ -892,6 +901,20 @@ describe('Bank reconciliation (e2e)', () => {
         await createExpenseFrom(accountId, expenseAccountId, 70, '2037-01-12');
         await createExpenseFrom(accountId, expenseAccountId, 30, '2037-01-15');
         await createOwnerContribution(accountId, 900, '2037-02-10');
+        // Nets to zero on the account: hidden from the list, so it must not
+        // count as uncleared either.
+        await authed(api().post('/manual-journals'))
+          .send({
+            date: '2037-01-18',
+            reference: faker.string.uuid(),
+            journalNumber: faker.string.uuid(),
+            publish: true,
+            entries: [
+              { index: 1, credit: 60, debit: 0, accountId },
+              { index: 2, credit: 0, debit: 60, accountId },
+            ],
+          })
+          .expect(201);
         const ticked = [
           await refByAmount(accountId, statementDate, 500),
           await refByAmount(accountId, statementDate, -30),
@@ -1028,11 +1051,22 @@ describe('Bank reconciliation (e2e)', () => {
         expect(rows.transactions.map((r: any) => r.amount).sort()).toEqual([
           100, 200, 300,
         ]);
-        expect(
-          rows.transactions.every(
-            (r: any) => r.reconcileStatus !== 'reconciled',
-          ),
-        ).toBe(true);
+        // The register shows neither R (both undone) nor C (draft discarded).
+        const register = await eventually(
+          async () =>
+            camelDeep(
+              (
+                await authed(
+                  api().get('/banking/transactions').query({ accountId }),
+                ).expect(200)
+              ).body,
+            ).transactions as any[],
+          (list) => list.every((r) => r.reconcileStatus === 'none'),
+        );
+        expect(register.length).toBeGreaterThanOrEqual(3);
+        expect(register.map((r) => r.reconcileStatus)).toEqual(
+          register.map(() => 'none'),
+        );
 
         // The books were not touched.
         expect(await balanceOf(accountId)).toBe(balanceBefore);
@@ -1178,10 +1212,11 @@ describe('Bank reconciliation (e2e)', () => {
           accountId,
           input('2038-01-31', -42, [ref]),
         ).expect(201);
-        await eventually(
+        const before = await eventually(
           () => detailOf(res.body.id),
           (body) => body.transactions.length === 1,
         );
+        const oldNumber = before.transactions[0].transactionNumber;
 
         await authed(api().delete(`/banking/categorize/${rowId}`)).expect(200);
         await categorizeRow(rowId, expenseAccountId, '2038-01-05').expect(201);
@@ -1200,6 +1235,25 @@ describe('Bank reconciliation (e2e)', () => {
         );
         expect(Number(detail.transactions[0].referenceId)).not.toBe(
           Number(ref.referenceId),
+        );
+        // The detail shows the new transaction's number, not the snapshot's.
+        const newRow = camelDeep(
+          (
+            await authed(
+              api().get('/banking/transactions').query({ accountId }),
+            ).expect(200)
+          ).body,
+        ).transactions.find(
+          (r: any) =>
+            r.referenceType === 'CashflowTransaction' &&
+            Number(r.referenceId) ===
+              Number(detail.transactions[0].referenceId),
+        );
+        expect(newRow).toBeDefined();
+        expect(newRow.transactionNumber).toBeTruthy();
+        expect(newRow.transactionNumber).not.toBe(oldNumber);
+        expect(detail.transactions[0].transactionNumber).toBe(
+          newRow.transactionNumber,
         );
 
         const summary = await summaryOf(accountId, '2038-02-28');
@@ -1300,6 +1354,24 @@ describe('Bank reconciliation (e2e)', () => {
         );
 
         await finish(cardId, input('2036-07-31', 80, [ref])).expect(201);
+      });
+    });
+
+    describe('account delete', () => {
+      it('deletes an account that has a draft, and its reconciliation data', async () => {
+        const accountId = await createAccount('bank', 'Rec delete bank');
+        await saveDraft(accountId, input('2036-08-31', 0, [])).expect(200);
+        await eventually(
+          () => summaryOf(accountId, '2036-08-31'),
+          (body) => !!body.draft,
+        );
+
+        await authed(api().delete(`/accounts/${accountId}`)).expect(200);
+
+        const res = await getSummary(accountId, '2036-08-31');
+        expect(res.status).toBeGreaterThanOrEqual(400);
+        expect(res.status).toBeLessThan(500);
+        expect(errorType(res)).toBe('BANK_RECONCILIATION_NOT_FOUND');
       });
     });
   });

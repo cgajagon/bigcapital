@@ -92,19 +92,37 @@ export class GetBankReconciliation {
       unclearedCount: toNumberOrNull(reconciliation.unclearedCount),
       transactions: rows.map((row) => {
         const current = ledger.get(refKey(row));
+        // Display fields follow the transaction while it exists (after a
+        // take-over the reference points to a new transaction); the snapshot
+        // is the fallback once it is deleted. `amount` stays the snapshot.
+        const display = current
+          ? {
+              date: current.date,
+              transactionTypeKey: current.transactionTypeKey,
+              transactionNumber: current.transactionNumber,
+              referenceNumber: current.referenceNumber,
+              contactName: current.contactName,
+            }
+          : {
+              date: toDateString(row.date),
+              transactionTypeKey: row.transactionTypeKey,
+              transactionNumber: row.transactionNumber,
+              referenceNumber: row.referenceNumber,
+              contactName: row.contactName,
+            };
         return {
           reconciliationId: row.reconciliationId,
           referenceType: row.referenceType,
           referenceId: row.referenceId,
           amount: Number(row.amount),
-          date: toDateString(row.date),
-          transactionTypeKey: row.transactionTypeKey,
-          transactionType: row.transactionTypeKey
-            ? (this.i18n.t(row.transactionTypeKey) as string)
+          date: display.date,
+          transactionTypeKey: display.transactionTypeKey,
+          transactionType: display.transactionTypeKey
+            ? (this.i18n.t(display.transactionTypeKey) as string)
             : null,
-          transactionNumber: row.transactionNumber,
-          referenceNumber: row.referenceNumber,
-          contactName: row.contactName,
+          transactionNumber: display.transactionNumber,
+          referenceNumber: display.referenceNumber,
+          contactName: display.contactName,
           currentAmount: current ? roundAmount(current.amount) : 0,
           isDeleted: !current,
         };
