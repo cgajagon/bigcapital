@@ -2408,5 +2408,8 @@
   "bank_reconciliation.error.transaction_not_on_account": "A ticked transaction is no longer on this account. Reload the page and try again.",
   "bank_reconciliation.error.transaction_already_reconciled": "A ticked transaction was already reconciled in another reconciliation. Reload the page and try again.",
   "bank_reconciliation.error.difference_not_zero": "The difference is not zero. Check the ticked transactions and the statement ending balance.",
-  "bank_reconciliation.error.not_found": "The reconciliation was not found."
+  "bank_reconciliation.error.not_found": "The reconciliation was not found.",
+  "bank_reconciliation.reconciled": "Reconciled",
+  "bank_reconciliation.cleared": "Cleared",
+  "bank_reconciliation.register_column": "R/C"
 }

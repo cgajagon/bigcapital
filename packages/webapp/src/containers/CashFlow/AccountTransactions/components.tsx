@@ -1,4 +1,4 @@
-import { Intent, Menu, MenuItem, Tag } from '@blueprintjs/core';
+import { Intent, Menu, MenuItem, Tag, Tooltip } from '@blueprintjs/core';
 import React from 'react';
 import intl from 'react-intl-universal';
 import { useAccountTransactionsContext } from './AccountTransactionsProvider';
@@ -79,6 +79,26 @@ const allTransactionsStatusAccessor = (transaction: AccountTransactionRow) => {
   );
 };
 
+const reconcileStatusAccessor = (transaction: AccountTransactionRow) => {
+  if (transaction.reconcileStatus === 'reconciled') {
+    return (
+      <Tooltip content={intl.get('bank_reconciliation.reconciled')}>
+        <Tag intent={Intent.SUCCESS} minimal>
+          {transaction.formattedReconcileStatus}
+        </Tag>
+      </Tooltip>
+    );
+  }
+  if (transaction.reconcileStatus === 'cleared') {
+    return (
+      <Tooltip content={intl.get('bank_reconciliation.cleared')}>
+        <Tag minimal>{transaction.formattedReconcileStatus}</Tag>
+      </Tooltip>
+    );
+  }
+  return null;
+};
+
 /**
  * Retrieve account transctions table columns.
  */
@@ -125,6 +145,13 @@ export function useAccountTransactionsColumns(): DataTableColumn<AccountTransact
         id: 'status',
         Header: 'Status',
         accessor: allTransactionsStatusAccessor,
+      },
+      {
+        id: 'reconcile_status',
+        Header: intl.get('bank_reconciliation.register_column'),
+        accessor: reconcileStatusAccessor,
+        width: 60,
+        className: 'reconcile_status',
       },
       {
         id: 'deposit',
