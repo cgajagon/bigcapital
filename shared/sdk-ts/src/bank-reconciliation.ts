@@ -88,7 +88,13 @@ export async function finishBankReconciliation(
   return data as FinishBankReconciliationResponse;
 }
 
-export async function undoBankReconciliation(fetcher: ApiFetcher, id: number): Promise<void> {
+export type UndoBankReconciliationResponse = OpResponseBody<OpForPath<typeof BANK_RECONCILIATION_ROUTES.UNDO, 'post'>>;
+
+export async function undoBankReconciliation(
+  fetcher: ApiFetcher,
+  id: number
+): Promise<UndoBankReconciliationResponse> {
   const post = fetcher.path(BANK_RECONCILIATION_ROUTES.UNDO).method('post').create();
-  await post({ id });
+  const { data } = await post({ id });
+  return data as UndoBankReconciliationResponse;
 }

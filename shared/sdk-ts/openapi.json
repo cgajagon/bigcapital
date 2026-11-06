@@ -15902,7 +15902,14 @@
         ],
         "responses": {
           "201": {
-            "description": "The ids of the undone reconciliations."
+            "description": "The ids of the undone reconciliations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BankReconciliationUndoResponseDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -40784,6 +40791,21 @@
         },
         "required": [
           "id"
+        ]
+      },
+      "BankReconciliationUndoResponseDto": {
+        "type": "object",
+        "properties": {
+          "undoneIds": {
+            "description": "Ids of the undone reconciliations.",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "undoneIds"
         ]
       },
       "TransactionLockingResponseDto": {

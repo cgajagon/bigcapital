@@ -289,3 +289,11 @@ export class BankReconciliationDetailResponseDto extends BankReconciliationListI
   @ApiProperty({ type: () => [BankReconciliationDetailTransactionDto] })
   transactions: BankReconciliationDetailTransactionDto[];
 }
+
+export class BankReconciliationUndoResponseDto {
+  @ApiProperty({
+    type: [Number],
+    description: 'Ids of the undone reconciliations.',
+  })
+  undoneIds: number[];
+}

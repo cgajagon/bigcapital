@@ -15126,6 +15126,10 @@ export interface components {
             /** @example 1 */
             id: number;
         };
+        BankReconciliationUndoResponseDto: {
+            /** @description Ids of the undone reconciliations. */
+            undoneIds: number[];
+        };
         TransactionLockingResponseDto: {
             /**
              * @description Indicates whether transaction locking is enabled
@@ -27483,7 +27487,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BankReconciliationUndoResponseDto"];
+                };
             };
         };
     };

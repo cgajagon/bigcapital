@@ -32,6 +32,7 @@ import {
   BankReconciliationListItemDto,
   BankReconciliationSummaryResponseDto,
   BankReconciliationTransactionsResponseDto,
+  BankReconciliationUndoResponseDto,
 } from './dtos/BankReconciliationResponses.dto';
 
 @Controller('banking/reconciliations')
@@ -167,6 +168,7 @@ export class BankReconciliationController {
   @ApiResponse({
     status: 201,
     description: 'The ids of the undone reconciliations.',
+    type: BankReconciliationUndoResponseDto,
   })
   public undo(@Param('id', ParseIntPipe) id: number) {
     return this.bankReconciliationApplication.undo(id);
