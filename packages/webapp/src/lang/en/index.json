@@ -2380,5 +2380,15 @@
   "bank_reconciliation.deleted": "deleted",
   "bank_reconciliation.statement_date_not_after_last": "The statement ending date must be after {date}.",
   "bank_reconciliation.ending_balance_invalid": "The statement ending balance must be a number.",
-  "bank_reconciliation.summary_load_failed": "The reconciliation details could not be loaded."
+  "bank_reconciliation.summary_load_failed": "The reconciliation details could not be loaded.",
+  "bank_reconciliation.number": "No.",
+  "bank_reconciliation.search": "Search",
+  "bank_reconciliation.close_confirm": "You have unsaved changes. Close without saving them?",
+  "bank_reconciliation.error.generic": "The reconciliation could not be saved.",
+  "bank_reconciliation.error.account_not_reconcilable": "This account cannot be reconciled.",
+  "bank_reconciliation.error.statement_date_not_after_last": "The statement ending date must be after the last reconciliation's statement date.",
+  "bank_reconciliation.error.transaction_not_on_account": "A ticked transaction is no longer on this account. Reload the page and try again.",
+  "bank_reconciliation.error.transaction_already_reconciled": "A ticked transaction was already reconciled in another reconciliation. Reload the page and try again.",
+  "bank_reconciliation.error.difference_not_zero": "The difference is not zero. Check the ticked transactions and the statement ending balance.",
+  "bank_reconciliation.error.not_found": "The reconciliation was not found."
 }
