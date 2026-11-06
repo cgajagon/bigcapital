@@ -31,13 +31,15 @@ export const getBankReconciliationStartSchema = (
       .transform((value, original) => (original === '' ? undefined : value))
       .typeError(() => intl.get('bank_reconciliation.ending_balance_invalid'))
       .required()
-      // The server accepts at most 2 decimal places.
+      // The server accepts at most 2 decimal places. Yup 0.28 gives tests the
+      // cast number only (no `originalValue`), so check the cents numerically.
       .test(
         'max-two-decimals',
         () => intl.get('bank_reconciliation.ending_balance_invalid'),
-        (_value, context) =>
-          // `originalValue` is what the user typed, before the number cast.
-          !/^-?\d*\.\d{3,}$/.test(String(context.originalValue ?? '').trim()),
+        (value) =>
+          value === undefined ||
+          value === null ||
+          Math.abs(value * 100 - Math.round(value * 100)) < 1e-6,
       )
       .label(intl.get('bank_reconciliation.statement_ending_balance')),
   });
