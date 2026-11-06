@@ -20,7 +20,7 @@ import {
 } from '@tanstack/react-query';
 import { useApiFetcher } from '../../../useRequest';
 import { accountsKeys } from '../../accounts/query-keys';
-import { cashflowAccountsKeys } from '../../cashflow-accounts/query-keys';
+import { CASHFLOW_ACCOUNT_TRANSACTIONS_INFINITY } from '../../cashflow-accounts/query-keys';
 import {
   BANK_RECONCILIATIONS,
   BANK_RECONCILIATION_SUMMARY,
@@ -51,8 +51,10 @@ const invalidateBankReconciliationQueries = (queryClient: QueryClient) => {
     queryKey: [BANK_RECONCILIATION_TRANSACTIONS],
   });
   queryClient.invalidateQueries({ queryKey: [BANK_RECONCILIATIONS] });
+  // Bare prefix on purpose: the `transactionsInfinity()` factory puts
+  // `undefined` in the account and query slots, which never match a cached key.
   queryClient.invalidateQueries({
-    queryKey: cashflowAccountsKeys.transactionsInfinity(),
+    queryKey: [CASHFLOW_ACCOUNT_TRANSACTIONS_INFINITY],
   });
   queryClient.invalidateQueries({ queryKey: accountsKeys.all() });
 };
@@ -65,6 +67,7 @@ export function useBankReconciliationSummary(
   const fetcher = useApiFetcher({ enableCamelCaseTransform: true });
   return useQuery({
     ...options,
+    enabled: !!accountId && (options?.enabled ?? true),
     queryKey: bankingKeys.reconciliationSummary(accountId, statementDate),
     queryFn: () =>
       fetchBankReconciliationSummary(fetcher, accountId, statementDate),
@@ -79,6 +82,7 @@ export function useBankReconciliationTransactions(
   const fetcher = useApiFetcher({ enableCamelCaseTransform: true });
   return useQuery({
     ...options,
+    enabled: !!accountId && !!statementDate && (options?.enabled ?? true),
     queryKey: bankingKeys.reconciliationTransactions(accountId, statementDate),
     queryFn: () =>
       fetchBankReconciliationTransactions(fetcher, accountId, statementDate),
@@ -92,6 +96,7 @@ export function useBankReconciliations(
   const fetcher = useApiFetcher({ enableCamelCaseTransform: true });
   return useQuery({
     ...options,
+    enabled: !!accountId && (options?.enabled ?? true),
     queryKey: bankingKeys.reconciliations(accountId),
     queryFn: () => fetchBankReconciliations(fetcher, accountId),
   });
@@ -104,6 +109,7 @@ export function useBankReconciliation(
   const fetcher = useApiFetcher({ enableCamelCaseTransform: true });
   return useQuery({
     ...options,
+    enabled: !!id && (options?.enabled ?? true),
     queryKey: bankingKeys.reconciliation(id),
     queryFn: () => fetchBankReconciliation(fetcher, id),
   });
