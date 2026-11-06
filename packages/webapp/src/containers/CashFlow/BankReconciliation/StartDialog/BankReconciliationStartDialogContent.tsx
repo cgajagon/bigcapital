@@ -16,9 +16,11 @@ import {
   Money,
 } from '@/components';
 import { DialogsName } from '@/constants/dialogs';
+import { DRAWERS } from '@/constants/drawers';
 import { withDialogActions } from '@/containers/Dialog/withDialogActions';
 import { useDateInputFormatter } from '@/hooks';
 import { useBankReconciliationSummary } from '@/hooks/query/banking';
+import { useDrawerActions } from '@/hooks/state';
 
 const formatDate = (date: string) =>
   moment(date, 'YYYY-MM-DD').format('YYYY MMM DD');
@@ -87,6 +89,7 @@ function BankReconciliationStartDialogContentInner({
   closeDialog,
 }: StartDialogContentProps) {
   const history = useHistory();
+  const { openDrawer } = useDrawerActions();
   const dateInputFormatter = useDateInputFormatter();
   const {
     data: summary,
@@ -101,6 +104,12 @@ function BankReconciliationStartDialogContentInner({
   );
 
   const close = () => closeDialog(DialogsName.BankReconciliationStart);
+
+  // Close the dialog first, then open the drawer.
+  const handleViewHistory = () => {
+    close();
+    openDrawer(DRAWERS.BANK_RECONCILIATION_HISTORY, { accountId });
+  };
 
   const handleResume = () => {
     history.push(`/cashflow-accounts/${accountId}/reconcile`);
@@ -155,6 +164,15 @@ function BankReconciliationStartDialogContentInner({
             amount={summary.lastReconciliation.endingBalance}
             currency={currencyCode}
           />
+          {' · '}
+          <Button
+            minimal
+            small
+            intent={Intent.PRIMARY}
+            onClick={handleViewHistory}
+          >
+            {intl.get('bank_reconciliation.history')}
+          </Button>
         </div>
       )}
     </div>

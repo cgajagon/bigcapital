@@ -23,6 +23,13 @@ const UncategorizeTransactionsBulkAlert: LazyExoticComponent<
   })),
 );
 
+const UndoBankReconciliationAlert: LazyExoticComponent<ComponentType<any>> =
+  lazy(() =>
+    import('../../BankReconciliation/alerts/UndoBankReconciliationAlert').then(
+      (m) => ({ default: m.UndoBankReconciliationAlert }),
+    ),
+  );
+
 interface BankAccountAlertEntry {
   name: string;
   component: LazyExoticComponent<ComponentType<any>>;
@@ -43,5 +50,9 @@ export const BankAccountAlerts: BankAccountAlertEntry[] = [
   {
     name: 'uncategorize-transactions-bulk',
     component: UncategorizeTransactionsBulkAlert,
+  },
+  {
+    name: 'bank-reconciliation-undo',
+    component: UndoBankReconciliationAlert,
   },
 ];

@@ -1,6 +1,7 @@
 import { DRAWERS } from '@/constants/drawers';
 import { CategorizeTransactionDrawer } from '@/containers/CashFlow/CategorizeTransaction/drawers/CategorizeTransactionDrawer/CategorizeTransactionDrawer';
 import { index as AccountDrawer } from '@/containers/Drawers/AccountDrawer';
+import { index as BankReconciliationHistoryDrawer } from '@/containers/Drawers/BankReconciliationHistoryDrawer';
 import { index as CashflowTransactionDetailDrawer } from '@/containers/Drawers/CashflowTransactionDetailDrawer';
 import { index as ExpenseDrawer } from '@/containers/Drawers/ExpenseDrawer';
 import { index as InventoryAdjustmentDetailDrawer } from '@/containers/Drawers/InventoryAdjustmentDetailDrawer';
@@ -31,6 +32,9 @@ export function CashFlowDrawers() {
         name={DRAWERS.REFUND_VENDOR_CREDIT_DETAILS}
       />
       <CategorizeTransactionDrawer name={DRAWERS.CATEGORIZE_TRANSACTION} />
+      <BankReconciliationHistoryDrawer
+        name={DRAWERS.BANK_RECONCILIATION_HISTORY}
+      />
     </>
   );
 }
