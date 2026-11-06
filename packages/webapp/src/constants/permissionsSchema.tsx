@@ -4,6 +4,7 @@ import {
   AbilitySubject,
   AccountAction,
   BillAction,
+  CashflowAction,
   CreditNoteAction,
   CustomerAction,
   ExpenseAction,
@@ -548,6 +549,20 @@ export const getPermissionsSchema = (): PermissionModule[] => [
           {
             label: intl.get('permissions.column.transactions_locking'),
             key: AccountAction.TransactionsLocking,
+          },
+        ],
+      },
+      {
+        label: intl.get('permissions.bank_reconciliation'),
+        subject: AbilitySubject.Cashflow,
+        permissions: [
+          {
+            label: intl.get('permissions.bank_reconciliation.reconcile'),
+            key: CashflowAction.Reconcile,
+          },
+          {
+            label: intl.get('permissions.bank_reconciliation.undo'),
+            key: CashflowAction.UndoReconciliation,
           },
         ],
       },

@@ -41,4 +41,5 @@ export enum DRAWERS {
   NOTIFICATIONS = 'notifications',
   CREDIT_NOTE_SEND_MAIL = 'CREDIT_NOTE_SEND_MAIL',
   CREATE_WORKSPACE = 'create-workspace',
+  BANK_RECONCILIATION_HISTORY = 'bank-reconciliation-history',
 }

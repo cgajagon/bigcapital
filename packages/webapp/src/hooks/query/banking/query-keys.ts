@@ -13,6 +13,10 @@ export const PENDING_BANK_ACCOUNT_TRANSACTIONS_INFINITY =
   'PENDING_BANK_ACCOUNT_TRANSACTIONS_INFINITY';
 export const AUTOFILL_CATEGORIZE_BANK_TRANSACTION =
   'AUTOFILL_CATEGORIZE_BANK_TRANSACTION';
+export const BANK_RECONCILIATION_SUMMARY = 'BANK_RECONCILIATION_SUMMARY';
+export const BANK_RECONCILIATION_TRANSACTIONS =
+  'BANK_RECONCILIATION_TRANSACTIONS';
+export const BANK_RECONCILIATIONS = 'BANK_RECONCILIATIONS';
 
 // Query key factory
 export const bankingKeys = {
@@ -37,6 +41,14 @@ export const bankingKeys = {
       AUTOFILL_CATEGORIZE_BANK_TRANSACTION,
       uncategorizedTransactionIds,
     ] as const,
+  reconciliationSummary: (accountId?: number, statementDate?: string) =>
+    [BANK_RECONCILIATION_SUMMARY, accountId, statementDate] as const,
+  reconciliationTransactions: (accountId?: number, statementDate?: string) =>
+    [BANK_RECONCILIATION_TRANSACTIONS, accountId, statementDate] as const,
+  reconciliations: (accountId?: number) =>
+    [BANK_RECONCILIATIONS, accountId] as const,
+  reconciliation: (id?: number) =>
+    [BANK_RECONCILIATIONS, 'detail', id] as const,
 };
 
 // Grouped object for use in components/hooks
@@ -50,4 +62,7 @@ export const BankingQueryKeys = {
   PENDING_BANK_ACCOUNT_TRANSACTIONS,
   PENDING_BANK_ACCOUNT_TRANSACTIONS_INFINITY,
   AUTOFILL_CATEGORIZE_BANK_TRANSACTION,
+  BANK_RECONCILIATION_SUMMARY,
+  BANK_RECONCILIATION_TRANSACTIONS,
+  BANK_RECONCILIATIONS,
 } as const;

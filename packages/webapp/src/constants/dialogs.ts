@@ -92,4 +92,6 @@ export enum DialogsName {
   ApiKeysGenerate = 'api-keys-generate',
   WorkspaceDelete = 'workspace-delete',
   WorkspaceInactivate = 'workspace-inactivate',
+  BankReconciliationStart = 'BankReconciliationStart',
+  BankReconciliationEditInfo = 'BankReconciliationEditInfo',
 }
