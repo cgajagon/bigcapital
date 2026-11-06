@@ -1,29 +1,38 @@
-import { Button, Classes, Intent, Position, Spinner } from '@blueprintjs/core';
+import {
+  Alert,
+  Button,
+  Classes,
+  Intent,
+  Position,
+  Spinner,
+} from '@blueprintjs/core';
 import { Form, Formik, useFormikContext } from 'formik';
 import * as FF from 'fp-ts/function';
 import moment from 'moment';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import intl from 'react-intl-universal';
 import { useHistory } from 'react-router-dom';
 import { BankReconciliationNotices } from '../components/BankReconciliationNotices';
+import { formatSignedAmount, useBankReconciliationDateFormat } from '../format';
+import { getBankReconciliationErrorMessage } from '../ReconcilePage/utils';
 import { getBankReconciliationStartSchema } from './BankReconciliationStartForm.schema';
 import type { WithDialogActionsProps } from '@/containers/Dialog/withDialogActions';
 import {
+  AppToaster,
   FDateInput,
   FFormGroup,
   FMoneyInputGroup,
   Icon,
-  Money,
 } from '@/components';
 import { DialogsName } from '@/constants/dialogs';
 import { DRAWERS } from '@/constants/drawers';
 import { withDialogActions } from '@/containers/Dialog/withDialogActions';
 import { useDateInputFormatter } from '@/hooks';
-import { useBankReconciliationSummary } from '@/hooks/query/banking';
+import {
+  useBankReconciliationSummary,
+  useDiscardBankReconciliationDraft,
+} from '@/hooks/query/banking';
 import { useDrawerActions } from '@/hooks/state';
-
-const formatDate = (date: string) =>
-  moment(date, 'YYYY-MM-DD').format('YYYY MMM DD');
 
 interface StartFormValues {
   statementDate: string;
@@ -91,6 +100,10 @@ function BankReconciliationStartDialogContentInner({
   const history = useHistory();
   const { openDrawer } = useDrawerActions();
   const dateInputFormatter = useDateInputFormatter();
+  const formatDate = useBankReconciliationDateFormat();
+  const [isDiscardOpen, setDiscardOpen] = useState(false);
+  const { mutateAsync: discardDraft, isPending: isDiscarding } =
+    useDiscardBankReconciliationDraft();
   const {
     data: summary,
     isLoading,
@@ -99,8 +112,8 @@ function BankReconciliationStartDialogContentInner({
 
   const lastStatementDate = summary?.lastReconciliation?.statementDate;
   const schema = useMemo(
-    () => getBankReconciliationStartSchema(lastStatementDate),
-    [lastStatementDate],
+    () => getBankReconciliationStartSchema(lastStatementDate, formatDate),
+    [lastStatementDate, formatDate],
   );
 
   const close = () => closeDialog(DialogsName.BankReconciliationStart);
@@ -114,6 +127,25 @@ function BankReconciliationStartDialogContentInner({
   const handleResume = () => {
     history.push(`/cashflow-accounts/${accountId}/reconcile`);
     close();
+  };
+
+  // The summary refetch clears `draft`, which brings back the start form.
+  const handleDiscardConfirm = () => {
+    discardDraft(accountId)
+      .then(() => {
+        AppToaster.show({
+          message: intl.get('bank_reconciliation.draft_discarded_toast'),
+          intent: Intent.SUCCESS,
+        });
+        setDiscardOpen(false);
+      })
+      .catch((error) => {
+        AppToaster.show({
+          message: getBankReconciliationErrorMessage(error),
+          intent: Intent.DANGER,
+        });
+        setDiscardOpen(false);
+      });
   };
 
   const handleSubmit = (values: StartFormValues) => {
@@ -147,23 +179,19 @@ function BankReconciliationStartDialogContentInner({
     );
   }
   const currencyCode = summary.account?.currencyCode;
+  const fmt = (amount: number) => formatSignedAmount(amount, currencyCode);
 
   const summaryLines = (
     <div style={{ marginBottom: 12 }}>
       <div>
         {intl.get('bank_reconciliation.beginning_balance')}:{' '}
-        <strong>
-          <Money amount={summary.beginningBalance} currency={currencyCode} />
-        </strong>
+        <strong>{fmt(summary.beginningBalance)}</strong>
       </div>
       {summary.lastReconciliation && (
         <div className={Classes.TEXT_MUTED}>
           {formatDate(summary.lastReconciliation.statementDate)}
           {' · '}
-          <Money
-            amount={summary.lastReconciliation.endingBalance}
-            currency={currencyCode}
-          />
+          {fmt(summary.lastReconciliation.endingBalance)}
           {' · '}
           <Button
             minimal
@@ -178,29 +206,57 @@ function BankReconciliationStartDialogContentInner({
     </div>
   );
 
-  // A draft exists: offer to resume it instead of the form.
+  // A draft exists: offer to resume or discard it instead of the form.
   if (summary.draft) {
+    const draftDate = formatDate(summary.draft.statementDate);
     return (
       <>
         <div className={Classes.DIALOG_BODY}>
           {summaryLines}
-          <div>
-            {formatDate(summary.draft.statementDate)}
-            {' · '}
-            <Money
-              amount={summary.draft.endingBalance}
-              currency={currencyCode}
-            />
-          </div>
+          <p data-testid="reconcile-draft-in-progress">
+            {intl.get('bank_reconciliation.draft_in_progress', {
+              date: draftDate,
+              balance: fmt(summary.draft.endingBalance),
+            })}
+          </p>
         </div>
         <div className={Classes.DIALOG_FOOTER}>
           <div className={Classes.DIALOG_FOOTER_ACTIONS}>
-            <Button intent={Intent.PRIMARY} onClick={handleResume}>
+            <Button
+              intent={Intent.PRIMARY}
+              disabled={isDiscarding}
+              onClick={handleResume}
+            >
               {intl.get('bank_reconciliation.resume')}
+            </Button>
+            <Button
+              intent={Intent.DANGER}
+              minimal
+              data-testid="reconcile-discard-draft"
+              loading={isDiscarding}
+              disabled={isDiscarding}
+              onClick={() => setDiscardOpen(true)}
+            >
+              {intl.get('bank_reconciliation.discard_draft')}
             </Button>
             {cancelButton}
           </div>
         </div>
+        <Alert
+          isOpen={isDiscardOpen}
+          intent={Intent.DANGER}
+          cancelButtonText={intl.get('cancel')}
+          confirmButtonText={intl.get('bank_reconciliation.discard_draft')}
+          loading={isDiscarding}
+          onCancel={() => setDiscardOpen(false)}
+          onConfirm={handleDiscardConfirm}
+        >
+          <p>
+            {intl.get('bank_reconciliation.discard_draft_confirm', {
+              date: draftDate,
+            })}
+          </p>
+        </Alert>
       </>
     );
   }

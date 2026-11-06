@@ -9,15 +9,17 @@ import {
 import React from 'react';
 import intl from 'react-intl-universal';
 import styled from 'styled-components';
-import { formatHistoryDate } from './formatHistoryDate';
 import { Can } from '@/components';
 import { AbilitySubject, CashflowAction } from '@/constants/abilityOption';
 import { DRAWERS } from '@/constants/drawers';
+import {
+  formatSignedAmount,
+  useBankReconciliationDateFormat,
+} from '@/containers/CashFlow/BankReconciliation/format';
 import { roundAmount } from '@/containers/CashFlow/BankReconciliation/ReconcilePage/utils';
 import { handleViewTransactionDetail } from '@/containers/FinancialStatements/utils/transactionDrawer';
 import { useBankReconciliation } from '@/hooks/query/banking';
 import { useAlertActions, useDrawerActions } from '@/hooks/state';
-import { formattedAmount } from '@/utils';
 
 const Totals = styled.dl`
   display: grid;
@@ -75,8 +77,9 @@ export function BankReconciliationDetail({
   const { data, isLoading } = useBankReconciliation(reconciliationId);
   const { openDrawer } = useDrawerActions();
   const { openAlert } = useAlertActions();
+  const formatDate = useBankReconciliationDateFormat();
   const fmt = (amount?: number | null) =>
-    amount == null ? '—' : formattedAmount(amount, currencyCode);
+    amount == null ? '—' : formatSignedAmount(amount, currencyCode);
 
   const handleUndo = () => {
     openAlert('bank-reconciliation-undo', {
@@ -102,7 +105,7 @@ export function BankReconciliationDetail({
       <>
         <div className={Classes.TEXT_MUTED} style={{ marginTop: 8 }}>
           {intl.get('bank_reconciliation.completed_on')}:{' '}
-          {formatHistoryDate(data.completedAt)}
+          {formatDate(data.completedAt)}
           {' · '}
           {intl.get('bank_reconciliation.completed_by')}:{' '}
           {data.completedByName ?? '—'}
@@ -152,7 +155,7 @@ export function BankReconciliationDetail({
                   roundAmount(Number(tx.amount));
               return (
                 <tr key={`${tx.referenceType}-${tx.referenceId}`}>
-                  <td>{formatHistoryDate(tx.date)}</td>
+                  <td>{formatDate(tx.date)}</td>
                   <td>
                     {tx.isDeleted ? (
                       label

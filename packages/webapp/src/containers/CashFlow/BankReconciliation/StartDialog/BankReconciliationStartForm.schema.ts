@@ -5,9 +5,11 @@ import * as Yup from 'yup';
 /**
  * Builds the start form schema. The statement date must be after the last
  * completed reconciliation's statement date, when there is one.
+ * `formatDate` renders that date in the message (the organization's format).
  */
 export const getBankReconciliationStartSchema = (
-  lastStatementDate?: string | null,
+  lastStatementDate: string | null | undefined,
+  formatDate: (date: string) => string,
 ) =>
   Yup.object().shape({
     statementDate: Yup.string()
@@ -17,7 +19,7 @@ export const getBankReconciliationStartSchema = (
         'after-last-reconciliation',
         () =>
           intl.get('bank_reconciliation.statement_date_not_after_last', {
-            date: moment(lastStatementDate, 'YYYY-MM-DD').format('YYYY MMM DD'),
+            date: lastStatementDate ? formatDate(lastStatementDate) : '',
           }),
         (value) =>
           !value ||

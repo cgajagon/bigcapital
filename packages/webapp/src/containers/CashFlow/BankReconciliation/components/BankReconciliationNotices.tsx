@@ -2,10 +2,10 @@ import { Button, Callout, Intent } from '@blueprintjs/core';
 import React from 'react';
 import intl from 'react-intl-universal';
 import { Link } from 'react-router-dom';
+import { formatSignedAmount } from '../format';
 import { DRAWERS } from '@/constants/drawers';
 import { handleViewTransactionDetail } from '@/containers/FinancialStatements/utils/transactionDrawer';
 import { useDrawerActions } from '@/hooks/state';
-import { formattedAmount } from '@/utils';
 
 interface MismatchItem {
   referenceType: string;
@@ -53,7 +53,7 @@ export function BankReconciliationNotices(
   const { uncategorizedCount, droppedCount, accountId, currencyCode } = props;
   const { onNavigate } = props;
   const { openDrawer } = useDrawerActions();
-  const fmt = (amount: number) => formattedAmount(amount, currencyCode);
+  const fmt = (amount: number) => formatSignedAmount(amount, currencyCode);
 
   const handleItemClick = (item: MismatchItem) => {
     onNavigate?.();

@@ -3,12 +3,14 @@ import React, { useState } from 'react';
 import intl from 'react-intl-universal';
 import styled from 'styled-components';
 import { BankReconciliationDetail } from './BankReconciliationDetail';
-import { formatHistoryDate } from './formatHistoryDate';
 import { DrawerBody, DrawerHeaderContent } from '@/components';
 import { DRAWERS } from '@/constants/drawers';
+import {
+  formatSignedAmount,
+  useBankReconciliationDateFormat,
+} from '@/containers/CashFlow/BankReconciliation/format';
 import { useAccount } from '@/hooks/query/accounts/queries';
 import { useBankReconciliations } from '@/hooks/query/banking';
-import { formattedAmount } from '@/utils';
 
 const Table = styled.table`
   width: 100%;
@@ -44,6 +46,7 @@ export function BankReconciliationHistoryContent({
   accountId,
 }: BankReconciliationHistoryContentProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const formatDate = useBankReconciliationDateFormat();
   const { data: account } = useAccount(accountId);
   const {
     data: list,
@@ -102,14 +105,14 @@ export function BankReconciliationHistoryContent({
             <tr key={item.id} onClick={() => setSelectedId(item.id)}>
               <td>
                 <Button minimal small intent={Intent.PRIMARY}>
-                  {formatHistoryDate(item.statementDate)}
+                  {formatDate(item.statementDate)}
                 </Button>
               </td>
               <td className="num">
-                {formattedAmount(item.endingBalance, currencyCode)}
+                {formatSignedAmount(item.endingBalance, currencyCode)}
               </td>
               <td>{item.completedByName ?? '—'}</td>
-              <td>{formatHistoryDate(item.completedAt)}</td>
+              <td>{formatDate(item.completedAt)}</td>
             </tr>
           ))}
         </tbody>

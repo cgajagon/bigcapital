@@ -1,14 +1,13 @@
 import { Button, Classes } from '@blueprintjs/core';
 import * as FF from 'fp-ts/function';
-import moment from 'moment';
 import React from 'react';
 import intl from 'react-intl-universal';
 import styled from 'styled-components';
+import { formatSignedAmount, useBankReconciliationDateFormat } from '../format';
 import { useBankReconciliationContext } from './BankReconciliationProvider';
 import type { WithDialogActionsProps } from '@/containers/Dialog/withDialogActions';
 import { DialogsName } from '@/constants/dialogs';
 import { withDialogActions } from '@/containers/Dialog/withDialogActions';
-import { formattedAmount } from '@/utils';
 
 const Bar = styled.div`
   display: flex;
@@ -42,7 +41,8 @@ function BankReconciliationHeaderRoot({
     endingBalance,
     beginningBalance,
   } = useBankReconciliationContext();
-  const fmt = (amount: number) => formattedAmount(amount, currencyCode);
+  const formatDate = useBankReconciliationDateFormat();
+  const fmt = (amount: number) => formatSignedAmount(amount, currencyCode);
 
   return (
     <Bar>
@@ -83,7 +83,7 @@ function BankReconciliationHeaderRoot({
           {intl.get('bank_reconciliation.statement_ending_date')}
         </div>
         <div className="value" data-testid="reconcile-statement-date">
-          {moment(statementDate, 'YYYY-MM-DD').format('YYYY MMM DD')}
+          {formatDate(statementDate)}
         </div>
       </Figure>
       <Button

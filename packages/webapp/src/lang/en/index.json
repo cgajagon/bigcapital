@@ -2369,8 +2369,8 @@
   "bank_reconciliation.resume": "Resume",
   "bank_reconciliation.show_after_statement_date": "Show transactions after the statement date",
   "bank_reconciliation.mismatch_warning": "The beginning balance is {amount} but the last reconciliation ended at {lastAmount}. A reconciled transaction was changed or deleted after it was reconciled. Fix it, tick a replacement, or undo the reconciliation that holds it.",
-  "bank_reconciliation.uncategorized_notice": "{count, plural, one {# uncategorized bank transaction is} other {# uncategorized bank transactions are}} dated on or before the statement date. They are not in your books yet, so they can't be ticked until they are categorized or matched.",
-  "bank_reconciliation.dropped_notice": "{count, plural, one {# ticked transaction was} other {# ticked transactions were}} removed from this draft because it was deleted or no longer touches this account.",
+  "bank_reconciliation.uncategorized_notice": "{count, plural, one {# uncategorized bank transaction is dated on or before the statement date. It is not in your books yet, so it can't be ticked until it is categorized or matched.} other {# uncategorized bank transactions are dated on or before the statement date. They are not in your books yet, so they can't be ticked until they are categorized or matched.}}",
+  "bank_reconciliation.dropped_notice": "{count, plural, one {# ticked transaction was removed from this draft because it was deleted or no longer touches this account.} other {# ticked transactions were removed from this draft because they were deleted or no longer touch this account.}}",
   "bank_reconciliation.undo": "Undo reconciliation",
   "bank_reconciliation.undo_confirm": "{count, plural, one {This will undo this reconciliation.} other {This will undo # reconciliations: this one and every later one.}} Your transactions will not be changed.",
   "bank_reconciliation.undo_draft_note": "A saved, unfinished reconciliation for this account will be discarded too.",
@@ -2411,5 +2411,11 @@
   "bank_reconciliation.error.not_found": "The reconciliation was not found.",
   "bank_reconciliation.reconciled": "Reconciled",
   "bank_reconciliation.cleared": "Cleared",
-  "bank_reconciliation.register_column": "R/C"
+  "bank_reconciliation.register_column": "R/C",
+  "bank_reconciliation.draft_in_progress": "A reconciliation is in progress for the statement ending {date}, {balance}.",
+  "bank_reconciliation.discard_draft": "Discard draft",
+  "bank_reconciliation.discard_draft_confirm": "Discard the saved reconciliation for the statement ending {date}? Its ticks will be lost. Your transactions will not be changed.",
+  "bank_reconciliation.draft_discarded_toast": "The saved reconciliation has been discarded.",
+  "bank_reconciliation.hidden_ticked_note": "{count, plural, one {# ticked transaction hidden} other {# ticked transactions hidden}}",
+  "bank_reconciliation.leave_confirm": "You have unsaved changes. Leave without saving them?"
 }

@@ -2,6 +2,7 @@ import {
   Button,
   ButtonGroup,
   Checkbox,
+  Classes,
   InputGroup,
   Switch,
 } from '@blueprintjs/core';
@@ -35,7 +36,15 @@ const TableBox = styled.div`
  * Tabs, the after-statement-date switch and the text search.
  */
 function BankReconciliationToolbar() {
-  const { filters, setFilters, isCreditCard } = useBankReconciliationContext();
+  const { filters, setFilters, isCreditCard, rows, selectedKeys } =
+    useBankReconciliationContext();
+
+  // Ticked rows the switch hides still count in the cleared balance.
+  const hiddenTickedCount = filters.showAfterStatementDate
+    ? 0
+    : rows.filter(
+        (row) => row.isAfterStatementDate && selectedKeys.has(refKey(row)),
+      ).length;
 
   const tabs: { id: BankReconciliationTab; label: string }[] = [
     {
@@ -76,6 +85,16 @@ function BankReconciliationToolbar() {
           setFilters({ showAfterStatementDate: e.currentTarget.checked })
         }
       />
+      {hiddenTickedCount > 0 && (
+        <span
+          className={Classes.TEXT_MUTED}
+          data-testid="reconcile-hidden-ticked"
+        >
+          {intl.get('bank_reconciliation.hidden_ticked_note', {
+            count: hiddenTickedCount,
+          })}
+        </span>
+      )}
       <InputGroup
         leftIcon="search"
         placeholder={intl.get('bank_reconciliation.search')}

@@ -3,6 +3,7 @@ import { Form, Formik } from 'formik';
 import * as FF from 'fp-ts/function';
 import React, { useMemo } from 'react';
 import intl from 'react-intl-universal';
+import { useBankReconciliationDateFormat } from '../format';
 import { getBankReconciliationStartSchema } from '../StartDialog/BankReconciliationStartForm.schema';
 import { useBankReconciliationContext } from './BankReconciliationProvider';
 import type { DialogBaseProps } from '@/components/DialogReduxConnect';
@@ -41,9 +42,10 @@ function BankReconciliationEditInfoDialogRoot({
   const { statementDate, endingBalance, lastStatementDate, setStatementInfo } =
     useBankReconciliationContext();
   const dateInputFormatter = useDateInputFormatter();
+  const formatDate = useBankReconciliationDateFormat();
   const schema = useMemo(
-    () => getBankReconciliationStartSchema(lastStatementDate),
-    [lastStatementDate],
+    () => getBankReconciliationStartSchema(lastStatementDate, formatDate),
+    [lastStatementDate, formatDate],
   );
 
   const close = () => closeDialog(dialogName);
