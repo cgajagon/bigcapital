@@ -60,6 +60,7 @@ function BankReconciliationToolbar() {
           <Button
             key={tab.id}
             active={filters.tab === tab.id}
+            aria-pressed={filters.tab === tab.id}
             data-testid={`reconcile-tab-${tab.id}`}
             onClick={() => setFilters({ tab: tab.id })}
           >
@@ -102,6 +103,7 @@ function SelectAllHeader() {
         checked={all}
         indeterminate={selectedCount > 0 && !all}
         disabled={visibleKeys.length === 0}
+        aria-label={intl.get('bank_reconciliation.select_all')}
         data-testid="reconcile-select-all"
         onChange={() => changeVisibleSelection(all ? [] : visibleKeys)}
       />
@@ -127,6 +129,7 @@ function SelectRowCell({ row }: { row: { original: BankReconciliationRow } }) {
     <div className="selection-checkbox">
       <Checkbox
         checked={selectedKeys.has(key)}
+        aria-label={intl.get('bank_reconciliation.select_transaction')}
         data-testid={`reconcile-check-${key}`}
         onChange={handleChange}
       />
@@ -134,6 +137,8 @@ function SelectRowCell({ row }: { row: { original: BankReconciliationRow } }) {
   );
 }
 SelectRowCell.cellType = 'field';
+
+const getRowId = (row: BankReconciliationRow) => refKey(row);
 
 const compareAmount = (
   a: { original: BankReconciliationRow },
@@ -242,7 +247,7 @@ export function BankReconciliationTable() {
             Cell: SelectRowCell,
           }}
           selectionColumnWidth={45}
-          getRowId={(row: BankReconciliationRow) => refKey(row)}
+          getRowId={getRowId}
           rowTestId={(row: { id: string }) => `reconcile-row-${row.id}`}
           autoResetSortBy={false}
           noResults={intl.get('no_results')}

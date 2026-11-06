@@ -31,5 +31,13 @@ export const getBankReconciliationStartSchema = (
       .transform((value, original) => (original === '' ? undefined : value))
       .typeError(() => intl.get('bank_reconciliation.ending_balance_invalid'))
       .required()
+      // The server accepts at most 2 decimal places.
+      .test(
+        'max-two-decimals',
+        () => intl.get('bank_reconciliation.ending_balance_invalid'),
+        (_value, context) =>
+          // `originalValue` is what the user typed, before the number cast.
+          !/^-?\d*\.\d{3,}$/.test(String(context.originalValue ?? '').trim()),
+      )
       .label(intl.get('bank_reconciliation.statement_ending_balance')),
   });

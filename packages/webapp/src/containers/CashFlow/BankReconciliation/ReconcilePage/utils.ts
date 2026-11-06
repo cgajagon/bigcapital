@@ -129,15 +129,16 @@ const ERROR_KEYS: Record<string, string> = {
  * `BANK_RECONCILIATION_*` code, else the server's message, else a generic one.
  */
 export function getBankReconciliationErrorMessage(error: unknown): string {
+  // The sdk-ts fetcher rejects with an `ApiError` that carries `data`.
   const data = (
-    error as {
-      response?: {
-        data?: { errors?: { type?: string; message?: string }[] };
-      };
-    }
-  )?.response?.data;
+    error as { data?: { errors?: { type?: string; message?: string }[] } }
+  )?.data;
   const first = data?.errors?.[0];
   const key = first?.type ? ERROR_KEYS[first.type] : undefined;
   if (key) return intl.get(key);
   return first?.message || intl.get('bank_reconciliation.error.generic');
 }
+
+/** True when the amount has more than 2 decimal places. */
+export const hasTooManyDecimals = (value: string | number): boolean =>
+  !/^-?\d*(\.\d{0,2})?$/.test(String(value).trim());

@@ -26,7 +26,8 @@ const Figure = styled.div<{ $danger?: boolean }>`
   .value {
     font-size: 22px;
     font-weight: 600;
-    color: ${(props) => (props.$danger ? '#cd4246' : 'inherit')};
+    color: ${(props) =>
+      props.$danger ? 'var(--color-danger, #cd4246)' : 'inherit'};
   }
 `;
 

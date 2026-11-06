@@ -62,7 +62,10 @@ const invalidateBankReconciliationQueries = (queryClient: QueryClient) => {
 export function useBankReconciliationSummary(
   accountId: number,
   statementDate?: string,
-  options?: UseQueryOptions<BankReconciliationSummaryResponse, Error>,
+  options?: Omit<
+    UseQueryOptions<BankReconciliationSummaryResponse, Error>,
+    'queryKey' | 'queryFn'
+  >,
 ): UseQueryResult<BankReconciliationSummaryResponse, Error> {
   const fetcher = useApiFetcher({ enableCamelCaseTransform: true });
   return useQuery({
@@ -77,7 +80,10 @@ export function useBankReconciliationSummary(
 export function useBankReconciliationTransactions(
   accountId: number,
   statementDate: string,
-  options?: UseQueryOptions<BankReconciliationTransactionsResponse, Error>,
+  options?: Omit<
+    UseQueryOptions<BankReconciliationTransactionsResponse, Error>,
+    'queryKey' | 'queryFn'
+  >,
 ): UseQueryResult<BankReconciliationTransactionsResponse, Error> {
   const fetcher = useApiFetcher({ enableCamelCaseTransform: true });
   return useQuery({
@@ -91,7 +97,10 @@ export function useBankReconciliationTransactions(
 
 export function useBankReconciliations(
   accountId: number,
-  options?: UseQueryOptions<BankReconciliationsListResponse, Error>,
+  options?: Omit<
+    UseQueryOptions<BankReconciliationsListResponse, Error>,
+    'queryKey' | 'queryFn'
+  >,
 ): UseQueryResult<BankReconciliationsListResponse, Error> {
   const fetcher = useApiFetcher({ enableCamelCaseTransform: true });
   return useQuery({
@@ -104,7 +113,10 @@ export function useBankReconciliations(
 
 export function useBankReconciliation(
   id: number,
-  options?: UseQueryOptions<BankReconciliationDetailResponse, Error>,
+  options?: Omit<
+    UseQueryOptions<BankReconciliationDetailResponse, Error>,
+    'queryKey' | 'queryFn'
+  >,
 ): UseQueryResult<BankReconciliationDetailResponse, Error> {
   const fetcher = useApiFetcher({ enableCamelCaseTransform: true });
   return useQuery({

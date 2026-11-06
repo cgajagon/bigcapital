@@ -1,4 +1,6 @@
+import { Callout, Intent } from '@blueprintjs/core';
 import React from 'react';
+import intl from 'react-intl-universal';
 import { BankReconciliationNotices } from '../components/BankReconciliationNotices';
 import { BankReconciliationEditInfoDialog } from './BankReconciliationEditInfoDialog';
 import { BankReconciliationFooterActions } from './BankReconciliationFooterActions';
@@ -16,8 +18,20 @@ import { CashFlowDrawers } from '@/containers/CashFlow/CashFlowDrawers';
  * Notices from the summary queried with the statement date.
  */
 function BankReconciliationPageNotices() {
-  const { accountId, datedSummary, droppedCount, beginningBalance } =
-    useBankReconciliationContext();
+  const {
+    accountId,
+    datedSummary,
+    droppedCount,
+    beginningBalance,
+    isTransactionsError,
+  } = useBankReconciliationContext();
+  if (isTransactionsError) {
+    return (
+      <Callout intent={Intent.DANGER} style={{ marginTop: 10 }}>
+        {intl.get('bank_reconciliation.transactions_load_failed')}
+      </Callout>
+    );
+  }
   if (!datedSummary) return null;
 
   const common = {

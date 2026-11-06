@@ -34,6 +34,7 @@ export function BankReconciliationFooterActions() {
     header,
     isDirty,
     isTransactionsFetching,
+    isTransactionsError,
     markSaved,
   } = useBankReconciliationContext();
   const { mutateAsync: saveDraft, isPending: isSaving } =
@@ -42,7 +43,7 @@ export function BankReconciliationFooterActions() {
     useFinishBankReconciliation();
 
   const goToAccount = () =>
-    history.push(`/cashflow-accounts/${accountId}/transactions`);
+    history.replace(`/cashflow-accounts/${accountId}/transactions`);
 
   const buildBody = () => ({
     statementDate,
@@ -75,12 +76,14 @@ export function BankReconciliationFooterActions() {
     }
   };
 
-  const busy = isSaving || isFinishing || isTransactionsFetching;
+  const busy =
+    isSaving || isFinishing || isTransactionsFetching || isTransactionsError;
 
   return (
     <Footer>
       <Button
         data-testid="reconcile-close"
+        disabled={isSaving || isFinishing}
         onClick={() => (isDirty ? setConfirmOpen(true) : goToAccount())}
       >
         {intl.get('bank_reconciliation.close_without_saving')}

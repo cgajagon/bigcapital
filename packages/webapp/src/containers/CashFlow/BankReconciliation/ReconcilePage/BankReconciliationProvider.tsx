@@ -1,3 +1,4 @@
+import { keepPreviousData } from '@tanstack/react-query';
 import moment from 'moment';
 import React, {
   useCallback,
@@ -12,6 +13,7 @@ import {
   computeHeader,
   filterRows,
   mergeSelection,
+  hasTooManyDecimals,
   refKey,
   stateSignature,
 } from './utils';
@@ -52,6 +54,7 @@ export interface BankReconciliationContextValue {
   visibleRows: BankReconciliationRow[];
   droppedCount: number;
   isTransactionsFetching: boolean;
+  isTransactionsError: boolean;
 
   selectedKeys: Set<string>;
   // Merges a change made on the visible rows (see `mergeSelection`).
@@ -91,7 +94,8 @@ function parseStartParams(search: string): StatementInfo | null | 'invalid' {
     !isValidDate(date) ||
     balance === null ||
     balance.trim() === '' ||
-    !Number.isFinite(endingBalance)
+    !Number.isFinite(endingBalance) ||
+    hasTooManyDecimals(balance)
   ) {
     return 'invalid';
   }
@@ -129,7 +133,6 @@ export function BankReconciliationProvider({
 
   useEffect(() => {
     if (infoResolved.current) return;
-    if (startParams === 'invalid') return goToAccount();
     if (startParams === null && baseSummary) {
       if (baseSummary.draft) {
         infoResolved.current = true;
@@ -143,6 +146,7 @@ export function BankReconciliationProvider({
     }
   }, [startParams, baseSummary, goToAccount]);
 
+  // Invalid params or a failed summary: leave once.
   useEffect(() => {
     if (startParams === 'invalid' || isSummaryError) goToAccount();
   }, [startParams, isSummaryError, goToAccount]);
@@ -153,16 +157,24 @@ export function BankReconciliationProvider({
   const { data: datedSummary } = useBankReconciliationSummary(
     accountId,
     statementDate || undefined,
+    // Keep the notices up while a new statement date loads.
+    { placeholderData: keepPreviousData },
   );
   const summary = datedSummary ?? baseSummary;
 
-  const { data: freshTransactions, isFetching: isTransactionsFetching } =
-    useBankReconciliationTransactions(accountId, statementDate);
-  // Keep showing the previous date's rows while a new date loads.
-  const lastTransactions = useRef(freshTransactions);
-  if (freshTransactions) lastTransactions.current = freshTransactions;
-  const transactions = freshTransactions ?? lastTransactions.current;
-  const isPlaceholderData = !freshTransactions && !!transactions;
+  const {
+    data: transactions,
+    isFetching: isTransactionsFetching,
+    isError: isTransactionsError,
+    isPlaceholderData,
+    isFetchedAfterMount,
+  } = useBankReconciliationTransactions(accountId, statementDate, {
+    placeholderData: keepPreviousData,
+    // Always read fresh data on mount: a cached response must not seed the
+    // ticks and hide another session's changes to the draft.
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
   const rows = useMemo(
     () => (transactions?.transactions ?? []) as BankReconciliationRow[],
     [transactions],
@@ -178,6 +190,7 @@ export function BankReconciliationProvider({
   useEffect(() => {
     if (!transactions || isPlaceholderData || !info) return;
     if (!selectionInitialised.current) {
+      if (!isFetchedAfterMount) return;
       selectionInitialised.current = true;
       const initial = new Set(transactions.selected.map(refKey));
       setSelectedKeys(initial);
@@ -191,7 +204,7 @@ export function BankReconciliationProvider({
       const kept = [...previous].filter((key) => existing.has(key));
       return kept.length === previous.size ? previous : new Set(kept);
     });
-  }, [transactions, isPlaceholderData, rows, info]);
+  }, [transactions, isPlaceholderData, isFetchedAfterMount, rows, info]);
 
   const [filters, setFiltersState] = useState<BankReconciliationFilters>({
     tab: 'all',
@@ -225,30 +238,55 @@ export function BankReconciliationProvider({
 
   const accountType = summary?.account?.accountType ?? account?.accountType;
 
-  const value: BankReconciliationContextValue = {
-    accountId,
-    account,
-    isCreditCard: accountType === 'credit-card',
-    currencyCode: summary?.account?.currencyCode ?? account?.currencyCode,
-    summary,
-    datedSummary,
-    lastStatementDate: summary?.lastReconciliation?.statementDate,
-    beginningBalance,
-    statementDate,
-    endingBalance,
-    setStatementInfo: setInfo,
-    rows,
-    visibleRows,
-    droppedCount: transactions?.droppedFromDraftCount ?? 0,
-    isTransactionsFetching,
-    selectedKeys,
-    changeVisibleSelection,
-    filters,
-    setFilters,
-    header,
-    isDirty,
-    markSaved,
-  };
+  const value = useMemo<BankReconciliationContextValue>(
+    () => ({
+      accountId,
+      account,
+      isCreditCard: accountType === 'credit-card',
+      currencyCode: summary?.account?.currencyCode ?? account?.currencyCode,
+      summary,
+      datedSummary,
+      lastStatementDate: summary?.lastReconciliation?.statementDate,
+      beginningBalance,
+      statementDate,
+      endingBalance,
+      setStatementInfo: setInfo,
+      rows,
+      visibleRows,
+      droppedCount: transactions?.droppedFromDraftCount ?? 0,
+      isTransactionsFetching,
+      isTransactionsError,
+      selectedKeys,
+      changeVisibleSelection,
+      filters,
+      setFilters,
+      header,
+      isDirty,
+      markSaved,
+    }),
+    [
+      accountId,
+      account,
+      accountType,
+      summary,
+      datedSummary,
+      beginningBalance,
+      statementDate,
+      endingBalance,
+      rows,
+      visibleRows,
+      transactions,
+      isTransactionsFetching,
+      isTransactionsError,
+      selectedKeys,
+      changeVisibleSelection,
+      filters,
+      setFilters,
+      header,
+      isDirty,
+      markSaved,
+    ],
+  );
 
   return (
     <DashboardInsider
