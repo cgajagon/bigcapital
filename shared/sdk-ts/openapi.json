@@ -39006,6 +39006,21 @@
             "description": "Formatted transaction status",
             "example": "Completed"
           },
+          "reconcileStatus": {
+            "type": "string",
+            "description": "Bank reconciliation status of the transaction",
+            "enum": [
+              "reconciled",
+              "cleared",
+              "none"
+            ],
+            "example": "reconciled"
+          },
+          "formattedReconcileStatus": {
+            "type": "string",
+            "description": "Short reconciliation status label: 'R' (reconciled), 'C' (cleared) or '' (none)",
+            "example": "R"
+          },
           "uncategorizedTransactionId": {
             "type": "number",
             "description": "ID of the uncategorized transaction",
@@ -39030,6 +39045,8 @@
           "formattedDate",
           "status",
           "formattedStatus",
+          "reconcileStatus",
+          "formattedReconcileStatus",
           "uncategorizedTransactionId"
         ]
       },

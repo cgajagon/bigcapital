@@ -121,6 +121,21 @@ export class BankTransactionResponseDto {
   formattedStatus: string;
 
   @ApiProperty({
+    description: 'Bank reconciliation status of the transaction',
+    enum: ['reconciled', 'cleared', 'none'],
+    example: 'reconciled',
+  })
+  reconcileStatus: 'reconciled' | 'cleared' | 'none';
+
+  @ApiProperty({
+    description:
+      "Short reconciliation status label: 'R' (reconciled), 'C' (cleared) or '' (none)",
+    example: 'R',
+    type: String,
+  })
+  formattedReconcileStatus: string;
+
+  @ApiProperty({
     description: 'ID of the uncategorized transaction',
     example: 67890,
     type: Number,

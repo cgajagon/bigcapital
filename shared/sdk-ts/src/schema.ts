@@ -14146,6 +14146,17 @@ export interface components {
              */
             formattedStatus: string;
             /**
+             * @description Bank reconciliation status of the transaction
+             * @example reconciled
+             * @enum {string}
+             */
+            reconcileStatus: "reconciled" | "cleared" | "none";
+            /**
+             * @description Short reconciliation status label: 'R' (reconciled), 'C' (cleared) or '' (none)
+             * @example R
+             */
+            formattedReconcileStatus: string;
+            /**
              * @description ID of the uncategorized transaction
              * @example 67890
              */
