@@ -3,6 +3,7 @@ import { Features } from '@/constants';
 import { DialogsName } from '@/constants/dialogs';
 import { RuleFormDialog } from '@/containers/Banking/Rules/RuleFormDialog/RuleFormDialog';
 import { DisconnectBankAccountDialog } from '@/containers/CashFlow/AccountTransactions/dialogs/DisconnectBankAccountDialog/DisconnectBankAccountDialog';
+import { BankReconciliationStartDialog } from '@/containers/CashFlow/BankReconciliation/StartDialog/BankReconciliationStartDialog';
 import { index as MoneyInDialog } from '@/containers/CashFlow/MoneyInDialog';
 import { index as MoneyOutDialog } from '@/containers/CashFlow/MoneyOutDialog';
 import { index as AccountDialog } from '@/containers/Dialogs/AccountDialog';
@@ -123,6 +124,9 @@ export default function DialogsContainer() {
       <RuleFormDialog dialogName={DialogsName.BankRuleForm} />
       <DisconnectBankAccountDialog
         dialogName={DialogsName.DisconnectBankAccountConfirmation}
+      />
+      <BankReconciliationStartDialog
+        dialogName={DialogsName.BankReconciliationStart}
       />
       <SharePaymentLinkDialog dialogName={DialogsName.SharePaymentLink} />
       <SelectPaymentMethodsDialog

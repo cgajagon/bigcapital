@@ -17,6 +17,7 @@ import {
 import * as FF from 'fp-ts/function';
 import { isEmpty } from 'lodash';
 import React, { useMemo } from 'react';
+import intl from 'react-intl-universal';
 import { useHistory } from 'react-router-dom';
 import { withBanking } from '../withBanking';
 import { withBankingActions } from '../withBankingActions';
@@ -27,6 +28,7 @@ import type { WithBankingProps } from '../withBanking';
 import type { WithBankingActionsProps } from '../withBankingActions';
 import type { WithAlertActionsProps } from '@/containers/Alert/withAlertActions';
 import type { WithDialogActionsProps } from '@/containers/Dialog/withDialogActions';
+import type { WithDrawerActionsProps } from '@/containers/Drawer/withDrawerActions';
 import {
   Icon,
   DashboardActionsBar,
@@ -34,16 +36,24 @@ import {
   FormattedMessage as T,
   AppToaster,
   If,
+  Can,
 } from '@/components';
 import { useAppShellContext } from '@/components/AppShell/AppContentShell/AppContentShellProvider';
+import { CashflowAction, AbilitySubject } from '@/constants/abilityOption';
 import {
   getAddMoneyOutOptions,
   getAddMoneyInOptions,
 } from '@/constants/cashflowOptions';
 import { DialogsName } from '@/constants/dialogs';
+import { DRAWERS } from '@/constants/drawers';
 import { withAlertActions } from '@/containers/Alert/withAlertActions';
 import { withDialogActions } from '@/containers/Dialog/withDialogActions';
-import { useRefreshCashflowTransactions, useSaveSettings } from '@/hooks/query';
+import { withDrawerActions } from '@/containers/Drawer/withDrawerActions';
+import {
+  useCurrentOrganizationBaseCurrency,
+  useRefreshCashflowTransactions,
+  useSaveSettings,
+} from '@/hooks/query';
 import {
   useUpdateBankAccount,
   useExcludeUncategorizedTransactions,
@@ -61,7 +71,8 @@ interface AccountTransactionsActionsBarInnerProps
       | 'categorizedTransactionsSelected'
     >,
     Pick<WithBankingActionsProps, 'enableMultipleCategorization'>,
-    Pick<WithAlertActionsProps, 'openAlert'> {}
+    Pick<WithAlertActionsProps, 'openAlert'>,
+    Pick<WithDrawerActionsProps, 'openDrawer'> {}
 
 function AccountTransactionsActionsBarInner({
   // #withDialogActions
@@ -78,6 +89,9 @@ function AccountTransactionsActionsBarInner({
 
   // #withAlerts
   openAlert,
+
+  // #withDrawerActions
+  openDrawer,
 }: AccountTransactionsActionsBarInnerProps) {
   // Settings hook.
   const { mutateAsync: saveSettings } = useSaveSettings();
@@ -96,6 +110,12 @@ function AccountTransactionsActionsBarInner({
   // Retrieves the money in/out buttons options.
   const addMoneyInOptions = useMemo(() => getAddMoneyInOptions(), []);
   const addMoneyOutOptions = useMemo(() => getAddMoneyOutOptions(), []);
+
+  const baseCurrency = useCurrentOrganizationBaseCurrency();
+  const isForeignCurrency =
+    !!currentAccount?.currencyCode &&
+    !!baseCurrency &&
+    currentAccount.currencyCode !== baseCurrency;
 
   const isFeedsActive = !!currentAccount?.isFeedsActive;
   const isFeedsPaused = !!currentAccount?.isFeedsPaused;
@@ -128,6 +148,14 @@ function AccountTransactionsActionsBarInner({
   // Handle import button click.
   const handleImportBtnClick = () => {
     history.push(`/cashflow-accounts/${accountId}/import`);
+  };
+  // Handle the reconcile button click.
+  const handleReconcileClick = () => {
+    openDialog(DialogsName.BankReconciliationStart, { accountId });
+  };
+  // Handle the reconciliation history click.
+  const handleReconciliationHistoryClick = () => {
+    openDrawer(DRAWERS.BANK_RECONCILIATION_HISTORY, { accountId });
   };
   // Handle bank rules click.
   const handleBankRulesClick = () => {
@@ -285,6 +313,24 @@ function AccountTransactionsActionsBarInner({
             text={<T id={'import'} />}
             onClick={handleImportBtnClick}
           />
+          <Can I={CashflowAction.Reconcile} a={AbilitySubject.Cashflow}>
+            <Tooltip
+              content={intl.get(
+                'bank_reconciliation.foreign_currency_disabled',
+              )}
+              disabled={!isForeignCurrency}
+              minimal={true}
+              position={Position.BOTTOM}
+            >
+              <Button
+                className={Classes.MINIMAL}
+                icon={<Icon icon="check" iconSize={16} />}
+                text={<T id={'bank_reconciliation.reconcile'} />}
+                onClick={handleReconcileClick}
+                disabled={isForeignCurrency}
+              />
+            </Tooltip>
+          </Can>
           <NavbarDivider />
         </If>
 
@@ -344,6 +390,21 @@ function AccountTransactionsActionsBarInner({
                   text={<T id={'import'} />}
                   onClick={handleImportBtnClick}
                 />
+                <Can I={CashflowAction.Reconcile} a={AbilitySubject.Cashflow}>
+                  <MenuItem
+                    icon={<Icon icon="check" iconSize={16} />}
+                    text={<T id={'bank_reconciliation.reconcile'} />}
+                    onClick={handleReconcileClick}
+                    disabled={isForeignCurrency}
+                    title={
+                      isForeignCurrency
+                        ? intl.get(
+                            'bank_reconciliation.foreign_currency_disabled',
+                          )
+                        : undefined
+                    }
+                  />
+                </Can>
               </Menu>
             }
           >
@@ -431,6 +492,12 @@ function AccountTransactionsActionsBarInner({
                 <MenuDivider />
               </If>
 
+              <Can I={CashflowAction.Reconcile} a={AbilitySubject.Cashflow}>
+                <MenuItem
+                  onClick={handleReconciliationHistoryClick}
+                  text={<T id={'bank_reconciliation.history'} />}
+                />
+              </Can>
               <MenuItem onClick={handleBankRulesClick} text={'Bank rules'} />
               <MenuDivider />
               <If condition={isSyncingOwner && isFeedsActive}>
@@ -479,4 +546,5 @@ export const AccountTransactionsActionsBar = FF.pipe(
   ),
   withAlertActions,
   withDialogActions,
+  withDrawerActions,
 );

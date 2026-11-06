@@ -1263,6 +1263,20 @@ export const getDashboardRoutes = () => [
     defaultSearchResource: RESOURCES_TYPES.ACCOUNT,
   },
   {
+    path: `/cashflow-accounts/:id/reconcile`,
+    component: lazy(
+      () =>
+        import(
+          '@/containers/CashFlow/BankReconciliation/ReconcilePage/BankReconciliationPage'
+        ),
+    ),
+    sidebarExpand: false,
+    backLink: true,
+    pageTitle: intl.get('bank_reconciliation.reconcile'),
+    subscriptionActive: [SUBSCRIPTION_TYPE.MAIN],
+    defaultSearchResource: RESOURCES_TYPES.ACCOUNT,
+  },
+  {
     path: `/cashflow-accounts`,
     component: lazy(() =>
       import(
