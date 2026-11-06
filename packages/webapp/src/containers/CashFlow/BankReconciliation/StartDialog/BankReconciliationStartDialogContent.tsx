@@ -1,4 +1,4 @@
-import { Button, Classes, Intent, Position } from '@blueprintjs/core';
+import { Button, Classes, Intent, Position, Spinner } from '@blueprintjs/core';
 import { Form, Formik, useFormikContext } from 'formik';
 import * as FF from 'fp-ts/function';
 import moment from 'moment';
@@ -19,6 +19,9 @@ import { DialogsName } from '@/constants/dialogs';
 import { withDialogActions } from '@/containers/Dialog/withDialogActions';
 import { useDateInputFormatter } from '@/hooks';
 import { useBankReconciliationSummary } from '@/hooks/query/banking';
+
+const formatDate = (date: string) =>
+  moment(date, 'YYYY-MM-DD').format('YYYY MMM DD');
 
 interface StartFormValues {
   statementDate: string;
@@ -42,9 +45,11 @@ interface StartDialogContentProps
 function StartFormNotices({
   accountId,
   currencyCode,
+  onNavigate,
 }: {
   accountId: number;
   currencyCode?: string;
+  onNavigate: () => void;
 }) {
   const { values } = useFormikContext<StartFormValues>();
   const date = moment(values.statementDate, 'YYYY-MM-DD', true).isValid()
@@ -55,16 +60,24 @@ function StartFormNotices({
 
   if (!date || !data) return null;
 
-  return (
-    <BankReconciliationNotices
-      mismatch={data.mismatch}
-      uncategorizedCount={data.uncategorizedCount}
-      accountId={accountId}
-      beginningBalance={data.beginningBalance}
-      lastEndingBalance={data.lastReconciliation?.endingBalance}
-      currencyCode={currencyCode}
-    />
-  );
+  const common = {
+    uncategorizedCount: data.uncategorizedCount,
+    accountId,
+    currencyCode,
+    onNavigate,
+  };
+  // A mismatch always comes with a last reconciliation.
+  if (data.mismatch && data.lastReconciliation) {
+    return (
+      <BankReconciliationNotices
+        {...common}
+        mismatch={data.mismatch}
+        beginningBalance={data.beginningBalance}
+        lastEndingBalance={data.lastReconciliation.endingBalance}
+      />
+    );
+  }
+  return <BankReconciliationNotices {...common} />;
 }
 
 function BankReconciliationStartDialogContentInner({
@@ -75,7 +88,11 @@ function BankReconciliationStartDialogContentInner({
 }: StartDialogContentProps) {
   const history = useHistory();
   const dateInputFormatter = useDateInputFormatter();
-  const { data: summary, isLoading } = useBankReconciliationSummary(accountId);
+  const {
+    data: summary,
+    isLoading,
+    isError,
+  } = useBankReconciliationSummary(accountId);
 
   const lastStatementDate = summary?.lastReconciliation?.statementDate;
   const schema = useMemo(
@@ -99,8 +116,26 @@ function BankReconciliationStartDialogContentInner({
     close();
   };
 
-  if (isLoading || !summary) {
-    return <div className={Classes.DIALOG_BODY} />;
+  const cancelButton = <Button onClick={close}>{intl.get('cancel')}</Button>;
+
+  if (isLoading) {
+    return (
+      <div className={Classes.DIALOG_BODY}>
+        <Spinner size={30} />
+      </div>
+    );
+  }
+  if (isError || !summary) {
+    return (
+      <>
+        <div className={Classes.DIALOG_BODY}>
+          {intl.get('bank_reconciliation.summary_load_failed')}
+        </div>
+        <div className={Classes.DIALOG_FOOTER}>
+          <div className={Classes.DIALOG_FOOTER_ACTIONS}>{cancelButton}</div>
+        </div>
+      </>
+    );
   }
   const currencyCode = summary.account?.currencyCode;
 
@@ -114,7 +149,7 @@ function BankReconciliationStartDialogContentInner({
       </div>
       {summary.lastReconciliation && (
         <div className={Classes.TEXT_MUTED}>
-          {summary.lastReconciliation.statementDate}
+          {formatDate(summary.lastReconciliation.statementDate)}
           {' · '}
           <Money
             amount={summary.lastReconciliation.endingBalance}
@@ -132,7 +167,7 @@ function BankReconciliationStartDialogContentInner({
         <div className={Classes.DIALOG_BODY}>
           {summaryLines}
           <div>
-            {summary.draft.statementDate}
+            {formatDate(summary.draft.statementDate)}
             {' · '}
             <Money
               amount={summary.draft.endingBalance}
@@ -145,7 +180,7 @@ function BankReconciliationStartDialogContentInner({
             <Button intent={Intent.PRIMARY} onClick={handleResume}>
               {intl.get('bank_reconciliation.resume')}
             </Button>
-            <Button onClick={close}>Cancel</Button>
+            {cancelButton}
           </div>
         </div>
       </>
@@ -186,7 +221,11 @@ function BankReconciliationStartDialogContentInner({
             <FMoneyInputGroup name={'endingBalance'} minimal={true} fastField />
           </FFormGroup>
 
-          <StartFormNotices accountId={accountId} currencyCode={currencyCode} />
+          <StartFormNotices
+            accountId={accountId}
+            currencyCode={currencyCode}
+            onNavigate={close}
+          />
         </div>
 
         <div className={Classes.DIALOG_FOOTER}>
@@ -194,7 +233,7 @@ function BankReconciliationStartDialogContentInner({
             <Button type="submit" intent={Intent.PRIMARY}>
               {intl.get('bank_reconciliation.reconcile')}
             </Button>
-            <Button onClick={close}>Cancel</Button>
+            {cancelButton}
           </div>
         </div>
       </Form>

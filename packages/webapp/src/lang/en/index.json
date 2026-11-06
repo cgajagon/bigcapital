@@ -2376,5 +2376,9 @@
   "bank_reconciliation.finished_toast": "The reconciliation has been finished.",
   "bank_reconciliation.saved_toast": "The reconciliation has been saved for later.",
   "bank_reconciliation.undone_toast": "The reconciliation has been undone.",
-  "bank_reconciliation.foreign_currency_disabled": "Reconciliation is only available for accounts in the base currency."
+  "bank_reconciliation.foreign_currency_disabled": "Reconciliation is only available for accounts in the base currency.",
+  "bank_reconciliation.deleted": "deleted",
+  "bank_reconciliation.statement_date_not_after_last": "The statement ending date must be after {date}.",
+  "bank_reconciliation.ending_balance_invalid": "The statement ending balance must be a number.",
+  "bank_reconciliation.summary_load_failed": "The reconciliation details could not be loaded."
 }

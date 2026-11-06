@@ -15,7 +15,10 @@ export const getBankReconciliationStartSchema = (
       .label(intl.get('bank_reconciliation.statement_ending_date'))
       .test(
         'after-last-reconciliation',
-        ({ label }) => `${label} must be after ${lastStatementDate}`,
+        () =>
+          intl.get('bank_reconciliation.statement_date_not_after_last', {
+            date: moment(lastStatementDate, 'YYYY-MM-DD').format('YYYY MMM DD'),
+          }),
         (value) =>
           !value ||
           !lastStatementDate ||
@@ -25,7 +28,8 @@ export const getBankReconciliationStartSchema = (
           ),
       ),
     endingBalance: Yup.number()
-      .typeError(({ label }) => `${label} must be a number`)
+      .transform((value, original) => (original === '' ? undefined : value))
+      .typeError(() => intl.get('bank_reconciliation.ending_balance_invalid'))
       .required()
       .label(intl.get('bank_reconciliation.statement_ending_balance')),
   });

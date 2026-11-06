@@ -322,13 +322,16 @@ function AccountTransactionsActionsBarInner({
               minimal={true}
               position={Position.BOTTOM}
             >
-              <Button
-                className={Classes.MINIMAL}
-                icon={<Icon icon="check" iconSize={16} />}
-                text={<T id={'bank_reconciliation.reconcile'} />}
-                onClick={handleReconcileClick}
-                disabled={isForeignCurrency}
-              />
+              {/* A span, since disabled buttons swallow mouse events. */}
+              <span>
+                <Button
+                  className={Classes.MINIMAL}
+                  icon={<Icon icon="check" iconSize={16} />}
+                  text={<T id={'bank_reconciliation.reconcile'} />}
+                  onClick={handleReconcileClick}
+                  disabled={isForeignCurrency}
+                />
+              </span>
             </Tooltip>
           </Can>
           <NavbarDivider />
